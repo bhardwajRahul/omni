@@ -40,6 +40,12 @@ export enum ConditionType {
   WireguardConnection = 2,
 }
 
+export enum GrpcTunnelMode {
+  UNSET = 0,
+  ENABLED = 1,
+  DISABLED = 2,
+}
+
 export enum MachineStatusSpecRole {
   NONE = 0,
   CONTROL_PLANE = 1,
@@ -79,9 +85,19 @@ export enum MachineSetSpecUpdateStrategy {
   Rolling = 1,
 }
 
-export enum MachineSetSpecMachineClassAllocationType {
+export enum MachineSetSpecMachineClassType {
   Static = 0,
   Unlimited = 1,
+}
+
+export enum MachineSetSpecMachineAllocationType {
+  Static = 0,
+  Unlimited = 1,
+}
+
+export enum MachineSetSpecMachineAllocationSource {
+  MachineClass = 0,
+  MachineRequestSet = 1,
 }
 
 export enum TalosUpgradeStatusSpecPhase {
@@ -134,6 +150,16 @@ export type SecureBootStatus = {
   enabled?: boolean
 }
 
+export type Overlay = {
+  name?: string
+  image?: string
+}
+
+export type MetaValue = {
+  key?: number
+  value?: string
+}
+
 export type MachineStatusSpecHardwareStatusProcessor = {
   core_count?: number
   thread_count?: number
@@ -158,6 +184,7 @@ export type MachineStatusSpecHardwareStatusBlockDevice = {
   type?: string
   bus_path?: string
   system_disk?: boolean
+  readonly?: boolean
 }
 
 export type MachineStatusSpecHardwareStatus = {
@@ -194,25 +221,21 @@ export type MachineStatusSpecPlatformMetadata = {
   spot?: boolean
 }
 
-export type MachineStatusSpecSchematicOverlay = {
-  name?: string
-  image?: string
-}
-
-export type MachineStatusSpecSchematicMetaValue = {
-  key?: number
-  value?: string
-}
-
 export type MachineStatusSpecSchematic = {
   id?: string
   invalid?: boolean
   extensions?: string[]
   initial_schematic?: string
-  overlay?: MachineStatusSpecSchematicOverlay
+  overlay?: Overlay
   kernel_args?: string[]
-  meta_values?: MachineStatusSpecSchematicMetaValue[]
+  meta_values?: MetaValue[]
   full_id?: string
+}
+
+export type MachineStatusSpecDiagnostic = {
+  id?: string
+  message?: string
+  details?: string[]
 }
 
 export type MachineStatusSpec = {
@@ -230,6 +253,7 @@ export type MachineStatusSpec = {
   schematic?: MachineStatusSpecSchematic
   initial_talos_version?: string
   secure_boot_status?: SecureBootStatus
+  diagnostics?: MachineStatusSpecDiagnostic[]
 }
 
 export type TalosConfigSpec = {
@@ -319,6 +343,7 @@ export type ClusterMachineSpec = {
 
 export type ClusterMachineConfigPatchesSpec = {
   patches?: string[]
+  compressed_patches?: Uint8Array[]
 }
 
 export type ClusterMachineTalosVersionSpec = {
@@ -330,10 +355,12 @@ export type ClusterMachineConfigSpec = {
   data?: Uint8Array
   cluster_machine_version?: string
   generation_error?: string
+  compressed_data?: Uint8Array
 }
 
 export type RedactedClusterMachineConfigSpec = {
   data?: string
+  compressed_data?: Uint8Array
 }
 
 export type ClusterMachineIdentitySpec = {
@@ -439,12 +466,20 @@ export type InstallationMediaSpec = {
 
 export type ConfigPatchSpec = {
   data?: string
+  compressed_data?: Uint8Array
 }
 
 export type MachineSetSpecMachineClass = {
   name?: string
   machine_count?: number
-  allocation_type?: MachineSetSpecMachineClassAllocationType
+  allocation_type?: MachineSetSpecMachineClassType
+}
+
+export type MachineSetSpecMachineAllocation = {
+  name?: string
+  machine_count?: number
+  allocation_type?: MachineSetSpecMachineAllocationType
+  source?: MachineSetSpecMachineAllocationSource
 }
 
 export type MachineSetSpecBootstrapSpec = {
@@ -462,11 +497,12 @@ export type MachineSetSpecUpdateStrategyConfig = {
 
 export type MachineSetSpec = {
   update_strategy?: MachineSetSpecUpdateStrategy
-  machine_class?: MachineSetSpecMachineClass
+  machine_class?: MachineSetSpecMachineAllocation
   bootstrap_spec?: MachineSetSpecBootstrapSpec
   delete_strategy?: MachineSetSpecUpdateStrategy
   update_strategy_config?: MachineSetSpecUpdateStrategyConfig
   delete_strategy_config?: MachineSetSpecUpdateStrategyConfig
+  machine_allocation?: MachineSetSpecMachineAllocation
 }
 
 export type TalosUpgradeStatusSpec = {
@@ -485,12 +521,8 @@ export type MachineSetStatusSpec = {
   error?: string
   machines?: Machines
   config_hash?: string
-  machine_class?: MachineSetSpecMachineClass
+  machine_allocation?: MachineSetSpecMachineAllocation
   locked_updates?: number
-}
-
-export type MachineSetRequiredMachinesSpec = {
-  required_additional_machines?: number
 }
 
 export type MachineSetNodeSpec = {
@@ -586,6 +618,7 @@ export type FeaturesConfigSpec = {
   enable_workload_proxying?: boolean
   etcd_backup_settings?: EtcdBackupSettings
   embedded_discovery_service?: boolean
+  audit_log_enabled?: boolean
 }
 
 export type EtcdBackupSettings = {
@@ -594,12 +627,20 @@ export type EtcdBackupSettings = {
   max_interval?: GoogleProtobufDuration.Duration
 }
 
-export type MachineClassSpec = {
-  match_labels?: string[]
+export type MachineClassSpecProvision = {
+  provider_id?: string
+  talos_version?: string
+  extensions?: string[]
+  kernel_args?: string[]
+  meta_values?: MetaValue[]
+  idle_machine_count?: number
+  provider_data?: string
+  grpc_tunnel?: GrpcTunnelMode
 }
 
-export type MachineClassStatusSpec = {
-  required_additional_machines?: number
+export type MachineClassSpec = {
+  match_labels?: string[]
+  auto_provision?: MachineClassSpecProvision
 }
 
 export type MachineConfigGenOptionsSpecInstallImage = {
@@ -722,4 +763,31 @@ export type ClusterKubernetesNodesSpec = {
 
 export type KubernetesNodeAuditResultSpec = {
   deleted_nodes?: string[]
+}
+
+export type MachineRequestSetSpec = {
+  provider_id?: string
+  machine_count?: number
+  talos_version?: string
+  extensions?: string[]
+  kernel_args?: string[]
+  meta_values?: MetaValue[]
+  provider_data?: string
+  grpc_tunnel?: GrpcTunnelMode
+}
+
+export type MachineRequestSetStatusSpec = {
+}
+
+export type ClusterDiagnosticsSpecNode = {
+  id?: string
+  num_diagnostics?: number
+}
+
+export type ClusterDiagnosticsSpec = {
+  nodes?: ClusterDiagnosticsSpecNode[]
+}
+
+export type MachineRequestSetPressureSpec = {
+  required_machines?: number
 }

@@ -7,6 +7,7 @@ package omni_test
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"github.com/siderolabs/omni/client/api/omni/specs"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/auth"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	omnires "github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/controllers/omni/etcdbackup"
@@ -34,6 +36,9 @@ import (
 	"github.com/siderolabs/omni/internal/pkg/auth/role"
 	"github.com/siderolabs/omni/internal/pkg/config"
 )
+
+//go:embed testdata/infra.json
+var schema []byte
 
 func TestClusterValidation(t *testing.T) {
 	t.Parallel()
@@ -58,8 +63,18 @@ func TestClusterValidation(t *testing.T) {
 	talosVersion2 := omnires.NewTalosVersion(resources.DefaultNamespace, talos15)
 	talosVersion2.TypedSpec().Value.CompatibleKubernetesVersions = []string{"1.28.0", "1.28.1"}
 
+	talosVersion3 := omnires.NewTalosVersion(resources.DefaultNamespace, "1.3.0")
+	talosVersion3.TypedSpec().Value.CompatibleKubernetesVersions = []string{"1.26.0", "1.27.1"}
+	talosVersion3.TypedSpec().Value.Deprecated = true
+
+	talosVersion4 := omnires.NewTalosVersion(resources.DefaultNamespace, "1.3.4")
+	talosVersion4.TypedSpec().Value.CompatibleKubernetesVersions = []string{"1.26.0", "1.27.1"}
+	talosVersion4.TypedSpec().Value.Deprecated = true
+
 	require.NoError(t, st.Create(ctx, talosVersion1))
 	require.NoError(t, st.Create(ctx, talosVersion2))
+	require.NoError(t, st.Create(ctx, talosVersion3))
+	require.NoError(t, st.Create(ctx, talosVersion4))
 
 	cluster := omnires.NewCluster(resources.DefaultNamespace, "test")
 
@@ -68,6 +83,12 @@ func TestClusterValidation(t *testing.T) {
 
 	require.True(t, validated.IsValidationError(err), "expected validation error")
 	assert.ErrorContains(t, err, "invalid talos version")
+
+	cluster.TypedSpec().Value.TalosVersion = "1.3.0"
+	err = st.Create(ctx, cluster)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+	assert.ErrorContains(t, err, "is no longer supported")
 
 	cluster.TypedSpec().Value.TalosVersion = "1.4.0"
 	cluster.TypedSpec().Value.KubernetesVersion = "1.26.0"
@@ -128,6 +149,18 @@ func TestClusterValidation(t *testing.T) {
 	cluster.TypedSpec().Value.KubernetesVersion = "1.28.1"
 
 	require.NoError(t, st.Create(ctx, cluster))
+
+	cluster = omnires.NewCluster(resources.DefaultNamespace, "old")
+
+	cluster.TypedSpec().Value.TalosVersion = "1.3.0"
+	err = innerSt.Create(ctx, cluster)
+
+	require.NoError(t, err)
+
+	cluster.TypedSpec().Value.TalosVersion = "1.3.4"
+
+	err = st.Update(ctx, cluster)
+	require.NoError(t, err)
 }
 
 func TestClusterUseEmbeddedDiscoveryServiceValidation(t *testing.T) {
@@ -665,9 +698,10 @@ cluster:
   clusterName: test-cluster-name
 `)
 
-	configPatch.TypedSpec().Value.Data = patchDataNotAllowed
+	err := configPatch.TypedSpec().Value.SetUncompressedData([]byte(patchDataNotAllowed))
+	require.NoError(t, err)
 
-	err := st.Create(ctx, configPatch)
+	err = st.Create(ctx, configPatch)
 	require.ErrorContains(t, err, "is not allowed in the config patch")
 
 	patchDataAllowed := strings.TrimSpace(`
@@ -676,12 +710,14 @@ machine:
     bla: bla
 `)
 
-	configPatch.TypedSpec().Value.Data = patchDataAllowed
+	err = configPatch.TypedSpec().Value.SetUncompressedData([]byte(patchDataAllowed))
+	require.NoError(t, err)
 
 	err = st.Create(ctx, configPatch)
 	require.NoError(t, err)
 
-	configPatch.TypedSpec().Value.Data = patchDataNotAllowed
+	err = configPatch.TypedSpec().Value.SetUncompressedData([]byte(patchDataNotAllowed))
+	require.NoError(t, err)
 
 	err = st.Update(ctx, configPatch)
 	require.ErrorContains(t, err, "is not allowed in the config patch")
@@ -790,13 +826,13 @@ func TestMachineSetClassesValidation(t *testing.T) {
 	machineSet.Metadata().Labels().Set(omnires.LabelCluster, "test-cluster")
 	machineSet.Metadata().Labels().Set(omnires.LabelControlPlaneRole, "")
 
-	machineSet.TypedSpec().Value.MachineClass = &specs.MachineSetSpec_MachineClass{}
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{}
 
 	err = st.Create(ctx, machineSet)
 
 	require.True(t, validated.IsValidationError(err), "expected validation error")
 
-	machineSet.TypedSpec().Value.MachineClass = &specs.MachineSetSpec_MachineClass{
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{
 		Name: "none",
 	}
 
@@ -808,7 +844,7 @@ func TestMachineSetClassesValidation(t *testing.T) {
 
 	require.NoError(t, st.Create(ctx, machineClass))
 
-	machineSet.TypedSpec().Value.MachineClass = &specs.MachineSetSpec_MachineClass{
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{
 		Name: machineClass.Metadata().ID(),
 	}
 
@@ -820,14 +856,14 @@ func TestMachineSetClassesValidation(t *testing.T) {
 
 	require.True(t, validated.IsValidationError(err), "expected validation error")
 
-	machineSet.TypedSpec().Value.MachineClass.Name = "none"
+	machineSet.TypedSpec().Value.MachineAllocation.Name = "none"
 
 	err = st.Update(ctx, machineSet)
 
 	require.True(t, validated.IsValidationError(err), "expected validation error")
 
 	// expect no error, as the machine mgmt mode change is allowed if there are no nodes in the machine set
-	machineSet.TypedSpec().Value.MachineClass = nil
+	machineSet.TypedSpec().Value.MachineAllocation = nil
 
 	require.NoError(t, st.Update(ctx, machineSet))
 
@@ -835,9 +871,31 @@ func TestMachineSetClassesValidation(t *testing.T) {
 	require.NoError(t, st.Create(ctx, machineSetNode))
 
 	// machine set mgmt mode change is not allowed anymore
-	machineSet.TypedSpec().Value.MachineClass = &specs.MachineSetSpec_MachineClass{
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{
 		Name: machineClass.Metadata().ID(),
 	}
+
+	err = st.Update(ctx, machineSet)
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+	require.ErrorContains(t, err, "machine set is not empty")
+
+	require.NoError(t, st.Destroy(ctx, machineSetNode.Metadata()))
+
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{
+		Name:   machineClass.Metadata().ID(),
+		Source: specs.MachineSetSpec_MachineAllocation_MachineClass,
+	}
+
+	require.NoError(t, st.Update(ctx, machineSet))
+
+	// changing source is not allowed too
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{
+		Name:   machineClass.Metadata().ID(),
+		Source: specs.MachineSetSpec_MachineAllocation_MachineRequestSet,
+	}
+
+	// add a node
+	require.NoError(t, innerSt.Create(ctx, machineSetNode))
 
 	err = st.Update(ctx, machineSet)
 	require.True(t, validated.IsValidationError(err), "expected validation error")
@@ -863,21 +921,136 @@ func TestMachineClassValidation(t *testing.T) {
 	machineSet.Metadata().Labels().Set(omnires.LabelCluster, "test-cluster")
 	machineSet.Metadata().Labels().Set(omnires.LabelControlPlaneRole, "")
 
-	machineSet.TypedSpec().Value.MachineClass = &specs.MachineSetSpec_MachineClass{
+	machineSet.TypedSpec().Value.MachineAllocation = &specs.MachineSetSpec_MachineAllocation{
 		Name: "test-class",
 	}
 
 	machineClass := omnires.NewMachineClass(resources.DefaultNamespace, "test-class")
 
+	err := st.Create(ctx, machineClass)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	machineClass.TypedSpec().Value.MatchLabels = []string{"a"}
+
 	require.NoError(t, st.Create(ctx, machineClass))
 	require.NoError(t, st.Create(ctx, machineSet))
 
-	err := st.Destroy(ctx, machineClass.Metadata())
+	err = st.Destroy(ctx, machineClass.Metadata())
 
 	require.True(t, validated.IsValidationError(err), "expected validation error")
 
 	require.NoError(t, st.Destroy(ctx, machineSet.Metadata()))
 	require.NoError(t, st.Destroy(ctx, machineClass.Metadata()))
+
+	// invalid selectors
+
+	machineClass.TypedSpec().Value.MatchLabels = []string{"abcd + a"}
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// both modes set
+
+	machineClass.TypedSpec().Value.MatchLabels = []string{"abcd"}
+	machineClass.TypedSpec().Value.AutoProvision = &specs.MachineClassSpec_Provision{}
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// auto provision
+
+	talosVersion := omnires.NewTalosVersion(resources.DefaultNamespace, "1.8.0")
+	talosVersion.TypedSpec().Value.CompatibleKubernetesVersions = []string{"1.30.0", "1.30.1"}
+
+	providerStatus := infra.NewProviderStatus("exists")
+	providerStatus.TypedSpec().Value.Schema = string(schema)
+
+	require.NoError(t, st.Create(ctx, talosVersion))
+	require.NoError(t, st.Create(ctx, providerStatus))
+
+	// no provider id
+
+	machineClass.TypedSpec().Value.MatchLabels = nil
+	machineClass.TypedSpec().Value.AutoProvision = &specs.MachineClassSpec_Provision{
+		ProviderId:   "",
+		TalosVersion: "v1.8.0",
+	}
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// no provider registered
+
+	machineClass.TypedSpec().Value.AutoProvision.ProviderId = "none"
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// no talos version
+
+	machineClass.TypedSpec().Value.AutoProvision.ProviderId = providerStatus.Metadata().ID()
+	machineClass.TypedSpec().Value.AutoProvision.TalosVersion = ""
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// invalid talos version
+
+	machineClass.TypedSpec().Value.AutoProvision.TalosVersion = "1.99.0"
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// invalid provider data
+
+	machineClass.TypedSpec().Value.AutoProvision.TalosVersion = "1.8.0"
+	machineClass.TypedSpec().Value.AutoProvision.ProviderData = `mem: .nan`
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	machineClass.TypedSpec().Value.AutoProvision.ProviderData = `
+disk: 1TB
+`
+
+	err = st.Create(ctx, machineClass)
+
+	require.Error(t, err)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	// valid
+
+	machineClass.TypedSpec().Value.AutoProvision.TalosVersion = "1.8.0"
+	machineClass.TypedSpec().Value.AutoProvision.ProviderData = `
+size: t2.small
+`
+
+	err = st.Create(ctx, machineClass)
+
+	require.NoError(t, err)
 }
 
 func TestS3ConfigValidation(t *testing.T) {
@@ -951,6 +1124,62 @@ func TestSchematicConfigurationValidation(t *testing.T) {
 	res.Metadata().Labels().Set(omnires.LabelMachineSet, "test")
 
 	require.NoError(t, st.Update(ctx, res))
+}
+
+func TestMachineRequestSetValidation(t *testing.T) {
+	t.Parallel()
+
+	talosVersion1 := omnires.NewTalosVersion(resources.DefaultNamespace, "1.2.0")
+	talosVersion1.TypedSpec().Value.CompatibleKubernetesVersions = []string{"1.27.0", "1.27.1"}
+	talosVersion1.TypedSpec().Value.Deprecated = true
+
+	talosVersion2 := omnires.NewTalosVersion(resources.DefaultNamespace, "1.7.5")
+	talosVersion2.TypedSpec().Value.CompatibleKubernetesVersions = []string{"1.30.0"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	t.Cleanup(cancel)
+
+	innerSt := state.WrapCore(namespaced.NewState(inmem.Build))
+
+	require.NoError(t, innerSt.Create(ctx, talosVersion1))
+	require.NoError(t, innerSt.Create(ctx, talosVersion2))
+
+	providerStatus := infra.NewProviderStatus("talemu")
+	providerStatus.TypedSpec().Value.Schema = string(schema)
+
+	require.NoError(t, innerSt.Create(ctx, providerStatus))
+
+	st := validated.NewState(innerSt, omni.MachineRequestSetValidationOptions(innerSt)...)
+
+	res := omnires.NewMachineRequestSet(resources.DefaultNamespace, "test")
+
+	err := st.Create(ctx, res)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+
+	res.TypedSpec().Value.ProviderId = "talemu"
+	res.TypedSpec().Value.TalosVersion = "1234"
+	res.TypedSpec().Value.ProviderData = `
+size: t2.small
+`
+
+	err = st.Create(ctx, res)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+	assert.ErrorContains(t, err, "invalid talos version")
+
+	res.TypedSpec().Value.TalosVersion = "1.2.0"
+
+	err = st.Create(ctx, res)
+
+	require.True(t, validated.IsValidationError(err), "expected validation error")
+	assert.ErrorContains(t, err, "is no longer supported")
+
+	res.TypedSpec().Value.TalosVersion = "1.7.5"
+
+	err = st.Create(ctx, res)
+
+	require.NoError(t, err)
 }
 
 type mockEtcdBackupStoreFactory struct {

@@ -48,6 +48,7 @@ var resourcePollers = map[string]machinePollFunction{
 	runtime.PlatformMetadataType: pollPlatformMetadata,
 	runtime.MetaKeyType:          pollMeta,
 	runtime.ExtensionStatusType:  pollExtensions,
+	runtime.DiagnosticType:       pollDiagnostics,
 }
 
 var machinePollers = map[string]machinePollFunction{
@@ -316,6 +317,10 @@ func pollDisks(ctx context.Context, c *client.Client, info *Info) error {
 
 	for _, msg := range disksResp.GetMessages() {
 		for _, disk := range msg.GetDisks() {
+			if strings.HasPrefix(disk.GetDeviceName(), "/dev/loop") {
+				continue
+			}
+
 			info.Blockdevices = append(info.Blockdevices, &specs.MachineStatusSpec_HardwareStatus_BlockDevice{
 				Size:       disk.GetSize(),
 				Model:      disk.GetModel(),
@@ -327,6 +332,7 @@ func pollDisks(ctx context.Context, c *client.Client, info *Info) error {
 				Type:       disk.GetType().String(),
 				BusPath:    disk.GetBusPath(),
 				SystemDisk: disk.GetSystemDisk(),
+				Readonly:   disk.GetReadonly(),
 			})
 		}
 	}
@@ -421,6 +427,33 @@ func pollExtensions(ctx context.Context, c *client.Client, info *Info) error {
 
 	info.Schematic = &SchematicInfo{
 		SchematicInfo: schematicInfo,
+	}
+
+	return nil
+}
+
+func pollDiagnostics(ctx context.Context, c *client.Client, info *Info) error {
+	info.Diagnostics = nil
+
+	if err := forEachResource(
+		ctx,
+		c,
+		runtime.NamespaceName,
+		runtime.DiagnosticType,
+		func(r *runtime.Diagnostic) error {
+			info.Diagnostics = append(info.Diagnostics, &specs.MachineStatusSpec_Diagnostic{
+				Id:      r.Metadata().ID(),
+				Message: r.TypedSpec().Message,
+				Details: r.TypedSpec().Details,
+			})
+
+			return nil
+		}); err != nil {
+		return err
+	}
+
+	if len(info.Diagnostics) == 0 { // polling was successful, so ensure that MachineStatus gets updated
+		info.Diagnostics = []*specs.MachineStatusSpec_Diagnostic{}
 	}
 
 	return nil

@@ -26,6 +26,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"k8s.io/klog/v2"
 
+	"github.com/siderolabs/omni/client/pkg/compression"
 	"github.com/siderolabs/omni/client/pkg/constants"
 	authres "github.com/siderolabs/omni/client/pkg/omni/resources/auth"
 	omnires "github.com/siderolabs/omni/client/pkg/omni/resources/omni"
@@ -96,6 +97,12 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("failed to set up logging: %w", err)
 		}
 
+		if err = compression.InitConfig(config.Config.ConfigDataCompression.Enabled); err != nil {
+			return err
+		}
+
+		logger.Info("initialized resource compression config", zap.Bool("enabled", config.Config.ConfigDataCompression.Enabled))
+
 		// set kubernetes logger to use warn log level and use zap
 		klog.SetLogger(zapr.NewLogger(logger.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel)).With(logging.Component("kubernetes"))))
 
@@ -120,8 +127,8 @@ var rootCmd = &cobra.Command{
 
 		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-		ctx, stop := context.WithCancel(context.Background())
-		defer stop()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
 		// do not use signal.NotifyContext as it doesn't support any ways to log the received signal
 		panichandler.Go(func() {
@@ -129,7 +136,7 @@ var rootCmd = &cobra.Command{
 
 			logger.Warn("signal received, stopping Omni", zap.String("signal", s.String()))
 
-			stop()
+			cancel()
 		}, logger)
 
 		panichandler.Go(func() {
@@ -317,14 +324,14 @@ func init() {
 	rootCmd.Flags().StringVar(&config.Config.Name, "name", config.Config.Name, "instance user-facing name.")
 	rootCmd.Flags().StringVar(&config.Config.APIURL, "advertised-api-url", config.Config.APIURL, "advertised API frontend URL.")
 	rootCmd.Flags().StringVar(&config.Config.KubernetesProxyURL, "advertised-kubernetes-proxy-url", config.Config.KubernetesProxyURL, "advertised Kubernetes proxy URL.")
-	rootCmd.Flags().BoolVar(&config.Config.SiderolinkDisableLastEndpoint, "siderolink-disable-last-endpoint", false, "do not populate last known peer endpoint for the wireguard peers")
+	rootCmd.Flags().BoolVar(&config.Config.SiderolinkDisableLastEndpoint, "siderolink-disable-last-endpoint", false, "do not populate last known peer endpoint for the WireGuard peers")
 	rootCmd.Flags().StringVar(
 		&config.Config.SiderolinkWireguardAdvertisedAddress,
 		"siderolink-wireguard-advertised-addr",
 		config.Config.SiderolinkWireguardAdvertisedAddress,
 		"advertised wireguard address which is passed down to the nodes.")
-	rootCmd.Flags().StringVar(&config.Config.SiderolinkWireguardBindAddress, "siderolink-wireguard-bind-addr", config.Config.SiderolinkWireguardBindAddress, "Siderolink wireguard bind address.")
-	rootCmd.Flags().BoolVar(&config.Config.SiderolinkUseGRPCTunnel, "siderolink-use-grpc-tunnel", false, "use gRPC tunnel to wrap wireguard traffic instead of UDP")
+	rootCmd.Flags().StringVar(&config.Config.SiderolinkWireguardBindAddress, "siderolink-wireguard-bind-addr", config.Config.SiderolinkWireguardBindAddress, "SideroLink WireGuard bind address.")
+	rootCmd.Flags().BoolVar(&config.Config.SiderolinkUseGRPCTunnel, "siderolink-use-grpc-tunnel", false, "use gRPC tunnel to wrap WireGuard traffic instead of UDP")
 
 	rootCmd.Flags().StringVar(&config.Config.MachineAPIBindAddress, "siderolink-api-bind-addr", config.Config.MachineAPIBindAddress, "SideroLink provision bind address.")
 	rootCmd.Flags().StringVar(&config.Config.MachineAPICertFile, "siderolink-api-cert", config.Config.MachineAPICertFile, "SideroLink TLS cert file path.")
@@ -446,6 +453,8 @@ func init() {
 	rootCmd.Flags().BoolVar(&config.Config.WorkloadProxying.Enabled, "workload-proxying-enabled", config.Config.WorkloadProxying.Enabled, "enable workload proxying feature.")
 	rootCmd.Flags().StringVar(&config.Config.WorkloadProxying.Subdomain, "workload-proxying-subdomain", config.Config.WorkloadProxying.Subdomain, "workload proxying subdomain.")
 
+	rootCmd.Flags().BoolVar(&config.Config.ConfigDataCompression.Enabled, "config-data-compression-enabled", config.Config.ConfigDataCompression.Enabled, "enable config data compression.")
+
 	rootCmd.Flags().IntVar(&config.Config.LocalResourceServerPort, "local-resource-server-port", config.Config.LocalResourceServerPort, "port for local read-only public resource server.")
 
 	ensure.NoError(rootCmd.MarkFlagRequired("private-key-source"))
@@ -512,7 +521,7 @@ func init() {
 		&config.Config.EmbeddedDiscoveryService.Enabled,
 		"embedded-discovery-service-enabled",
 		config.Config.EmbeddedDiscoveryService.Enabled,
-		"enable embedded discovery service, binds only to the siderolink wireguard address",
+		"enable embedded discovery service, binds only to the SideroLink WireGuard address",
 	)
 	rootCmd.Flags().IntVar(
 		&config.Config.EmbeddedDiscoveryService.Port,

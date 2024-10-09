@@ -19,22 +19,22 @@ included in the LICENSE file.
             <t-spinner class="w-4 h-4" v-if="scaling"/>
             <div class="flex items-center gap-1" v-else-if="!editingMachinesCount">
               <div class="flex items-center">{{ machineSet?.spec?.machines?.healthy || 0 }}/<div :class="{'text-lg mt-0.5': requestedMachines === '∞'}">{{ requestedMachines }}</div></div>
-              <icon-button icon="edit" v-if="machineSet.spec.machine_class?.name" @click="editingMachinesCount = !editingMachinesCount"/>
+              <icon-button icon="edit" v-if="machineSet.spec.machine_allocation?.name" @click="editingMachinesCount = !editingMachinesCount"/>
             </div>
             <div v-else class="flex items-center gap-1">
               <div class="w-12">
                 <t-input :min="0" class="h-6" compact type="number" v-model="machineCount" @keydown.enter="() => updateMachineCount()"/>
               </div>
               <icon-button icon="check" @click="() => updateMachineCount()"/>
-              <t-button type="subtle" @click="() => updateMachineCount(MachineSetSpecMachineClassAllocationType.Unlimited)">
+              <t-button v-if="canUseAll" type="subtle" @click="() => updateMachineCount(MachineSetSpecMachineAllocationType.Unlimited)">
                 Use All
               </t-button>
             </div>
           </div>
         </div>
-        <machine-set-phase :item="machineSet" :class="{'col-span-2': !machineSet.spec?.machine_class?.name}" class="ml-2"/>
-        <div v-if="machineSet.spec?.machine_class?.name" class="rounded bg-naturals-N4 px-3 py-2 max-w-min max-md:col-span-4">
-          Machine Class: {{ machineSet.spec?.machine_class?.name }} ({{ machineClassMachineCount }})
+        <machine-set-phase :item="machineSet" :class="{'col-span-2': !machineSet.spec?.machine_allocation?.name}" class="ml-2"/>
+        <div v-if="machineSet.spec?.machine_allocation?.name" class="rounded bg-naturals-N4 px-3 py-2 max-w-min max-md:col-span-4">
+          Machine Class: {{ machineSet.spec?.machine_allocation?.name }} ({{ machineClassMachineCount }})
         </div>
       </div>
       <t-actions-box style="height: 24px" v-if="canRemoveMachineSet" @click.stop>
@@ -43,7 +43,7 @@ included in the LICENSE file.
       </t-actions-box>
       <div v-else class="w-6"/>
     </div>
-    <cluster-machine :id="machine.metadata.id" :machine-set="machineSet" :class="{ 'border-b': index != machines.length - 1 }"
+    <cluster-machine :id="machine.metadata.id" :machine-set="machineSet" :class="{ 'border-b': index != machines.length - 1 }" :has-diagnostic-info="nodesWithDiagnostics?.has(machine.metadata.id)"
       class="border-naturals-N4" v-for="(machine, index) in machines" :key="itemID(machine)" :machine="machine"
       :deleteDisabled="!canRemoveMachine" />
     <div v-if="hiddenMachinesCount > 0" class="text-xs p-4 pl-9 border-t border-naturals-N4 flex gap-1 items-center">
@@ -54,10 +54,10 @@ included in the LICENSE file.
 </template>
 
 <script setup lang="ts">
-import { Resource } from "@/api/grpc";
-import { MachineSetStatusSpec, ClusterMachineStatusSpec, MachineSetSpecMachineClassAllocationType } from "@/api/omni/specs/omni.pb";
-import { ClusterMachineStatusType, DefaultNamespace, LabelCluster, LabelControlPlaneRole, LabelMachineSet } from "@/api/resources";
-import { computed, ref, toRefs } from "vue";
+import { Resource, ResourceService } from "@/api/grpc";
+import { MachineSetStatusSpec, ClusterMachineStatusSpec, MachineSetSpecMachineAllocationType, MachineClassSpec } from "@/api/omni/specs/omni.pb";
+import { ClusterMachineStatusType, DefaultNamespace, LabelCluster, LabelControlPlaneRole, LabelMachineSet, MachineClassType } from "@/api/resources";
+import { computed, ref, toRefs, watch } from "vue";
 import { useRouter } from "vue-router";
 import { setupClusterPermissions } from "@/methods/auth";
 import Watch, { itemID } from "@/api/watch";
@@ -65,7 +65,7 @@ import { Runtime } from "@/api/common/omni.pb";
 import { machineSetTitle, scaleMachineSet } from "@/methods/machineset";
 import { controlPlaneMachineSetId, defaultWorkersMachineSetId } from "@/methods/machineset";
 import { showError } from "@/notification";
-import pluralize from 'pluralize';
+import pluralize from "pluralize";
 
 import TActionsBox from "@/components/common/ActionsBox/TActionsBox.vue";
 import TActionsBoxItem from "@/components/common/ActionsBox/TActionsBoxItem.vue";
@@ -76,11 +76,13 @@ import TButton from "@/components/common/Button/TButton.vue";
 import TInput from "@/components/common/TInput/TInput.vue";
 import TIcon from "@/components/common/Icon/TIcon.vue";
 import TSpinner from "@/components/common/Spinner/TSpinner.vue";
+import { withRuntime } from "@/api/options";
 
 const showMachinesCount = ref<number | undefined>(25);
 
 const props = defineProps<{
   machineSet: Resource<MachineSetStatusSpec>
+  nodesWithDiagnostics: Set<string>,
 }>();
 
 const { machineSet } = toRefs(props);
@@ -89,8 +91,25 @@ const machines = ref<Resource<ClusterMachineStatusSpec>[]>([]);
 const machinesWatch = new Watch(machines);
 const clusterID = computed(() => machineSet.value.metadata.labels?.[LabelCluster] ?? "");
 const editingMachinesCount = ref(false);
-const machineCount = ref(machineSet.value.spec.machine_class?.machine_count ?? 1);
+const machineCount = ref(machineSet.value.spec.machine_allocation?.machine_count ?? 1);
 const scaling = ref(false);
+const canUseAll = ref<boolean | undefined>();
+
+watch(editingMachinesCount, async (enabled: boolean, wasEnabled: boolean) => {
+  if (!machineSet.value.spec.machine_allocation?.name) {
+    return;
+  }
+
+  if (!wasEnabled && enabled && canUseAll.value === undefined) {
+    const machineClass: Resource<MachineClassSpec> = await ResourceService.Get({
+      type: MachineClassType,
+      id: machineSet.value.spec.machine_allocation?.name,
+      namespace: DefaultNamespace,
+    }, withRuntime(Runtime.Omni));
+
+    canUseAll.value = machineClass.spec.auto_provision === undefined;
+  }
+});
 
 const hiddenMachinesCount = computed(() => {
   if (showMachinesCount.value === undefined) {
@@ -130,8 +149,8 @@ const canRemoveMachine = computed(() => {
     return false;
   }
 
-  // don't allow destroying machines if the machine set is using machine class
-  if (machineSet.value.spec.machine_class?.name) {
+  // don't allow destroying machines if the machine set is using automatic allocation
+  if (machineSet.value.spec.machine_allocation?.name) {
     return false;
   }
 
@@ -152,7 +171,7 @@ const canRemoveMachineSet = computed(() => {
   return !deleteProtected.has(machineSet.value.metadata.id!)
 });
 
-const updateMachineCount = async (allocationType: MachineSetSpecMachineClassAllocationType = MachineSetSpecMachineClassAllocationType.Static) => {
+const updateMachineCount = async (allocationType: MachineSetSpecMachineAllocationType = MachineSetSpecMachineAllocationType.Static) => {
   scaling.value = true;
 
   try {
@@ -167,7 +186,7 @@ const updateMachineCount = async (allocationType: MachineSetSpecMachineClassAllo
 };
 
 const requestedMachines = computed(() => {
-  if (machineSet.value.spec.machine_class?.allocation_type === MachineSetSpecMachineClassAllocationType.Unlimited) {
+  if (machineSet.value.spec.machine_allocation?.allocation_type === MachineSetSpecMachineAllocationType.Unlimited) {
     return "∞";
   }
 
@@ -175,10 +194,10 @@ const requestedMachines = computed(() => {
 })
 
 const machineClassMachineCount = computed(() => {
-  if (machineSet.value.spec?.machine_class?.allocation_type === MachineSetSpecMachineClassAllocationType.Unlimited) {
+  if (machineSet.value.spec?.machine_allocation?.allocation_type === MachineSetSpecMachineAllocationType.Unlimited) {
     return "All Machines";
   }
 
-  return pluralize('Machine', machineSet.value.spec?.machine_class?.machine_count ?? 0, true)
+  return pluralize('Machine', machineSet.value.spec?.machine_allocation?.machine_count ?? 0, true)
 });
 </script>

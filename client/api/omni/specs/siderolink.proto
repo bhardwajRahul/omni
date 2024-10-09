@@ -26,7 +26,7 @@ message SiderolinkSpec {
   reserved 6;
   string virtual_addrport = 7;
   // RemoteAddr is the machine address how it's visible from Omni
-  // it is determined by reading X-Real-IP header coming from the gRPC API.
+  // it is determined by reading X-Forwarded-For header coming from the gRPC API.
   string remote_addr = 8;
 }
 
@@ -48,4 +48,10 @@ message ConnectionParamsSpec {
   string wireguard_endpoint = 3;
   // JoinToken is a join token required to connect to SideroLink.
   string join_token = 4;
+  // UseGRPCTunnel is a flag to enable gRPC tunneling.
+  bool use_grpc_tunnel = 5;
+  // EventsPort is the siderolink events port.
+  int32 events_port = 9;
+  // LogsPort is the logs port.
+  int32 logs_port = 10;
 }

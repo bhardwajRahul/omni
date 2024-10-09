@@ -19,6 +19,7 @@ import (
 	"github.com/mattn/go-shellwords"
 	"github.com/spf13/cobra"
 
+	"github.com/siderolabs/omni/client/pkg/compression"
 	clientconsts "github.com/siderolabs/omni/client/pkg/constants"
 	"github.com/siderolabs/omni/cmd/integration-test/pkg/clientconfig"
 	"github.com/siderolabs/omni/cmd/integration-test/pkg/tests"
@@ -30,6 +31,9 @@ var rootCmd = &cobra.Command{
 	Use:   "omni-integration-test",
 	Short: "Omni integration test runner.",
 	Long:  ``,
+	PersistentPreRunE: func(*cobra.Command, []string) error {
+		return compression.InitConfig(true)
+	},
 	RunE: func(*cobra.Command, []string) error {
 		return withContext(func(ctx context.Context) error {
 			// hacky hack
@@ -38,14 +42,17 @@ var rootCmd = &cobra.Command{
 			testOptions := tests.Options{
 				RunTestPattern: rootCmdFlags.runTestPattern,
 
-				ExpectedMachines: rootCmdFlags.expectedMachines,
-				CleanupLinks:     rootCmdFlags.cleanupLinks,
-				RunStatsCheck:    rootCmdFlags.runStatsCheck,
+				ExpectedMachines:  rootCmdFlags.expectedMachines,
+				CleanupLinks:      rootCmdFlags.cleanupLinks,
+				RunStatsCheck:     rootCmdFlags.runStatsCheck,
+				ProvisionMachines: rootCmdFlags.provisionMachinesCount,
 
 				MachineOptions:           rootCmdFlags.machineOptions,
 				AnotherTalosVersion:      rootCmdFlags.anotherTalosVersion,
 				AnotherKubernetesVersion: rootCmdFlags.anotherKubernetesVersion,
 				OmnictlPath:              rootCmdFlags.omnictlPath,
+				InfraProvider:            rootCmdFlags.infraProvider,
+				ProviderData:             rootCmdFlags.providerData,
 			}
 
 			if rootCmdFlags.restartAMachineScript != "" {
@@ -112,11 +119,14 @@ func execCmd(ctx context.Context, parsedScript []string, args ...string) error {
 var rootCmdFlags struct {
 	endpoint       string
 	runTestPattern string
+	infraProvider  string
+	providerData   string
 
-	expectedMachines int
-	parallel         int64
-	cleanupLinks     bool
-	runStatsCheck    bool
+	provisionMachinesCount int
+	expectedMachines       int
+	parallel               int64
+	cleanupLinks           bool
+	runStatsCheck          bool
 
 	testsTimeout time.Duration
 
@@ -154,6 +164,9 @@ func init() {
 	rootCmd.Flags().DurationVarP(&rootCmdFlags.testsTimeout, "timeout", "t", time.Hour, "tests global timeout")
 	rootCmd.Flags().BoolVar(&rootCmdFlags.cleanupLinks, "cleanup-links", false, "remove all links after the tests are complete")
 	rootCmd.Flags().BoolVar(&rootCmdFlags.runStatsCheck, "run-stats-check", false, "runs stats check after the test is complete")
+	rootCmd.Flags().IntVar(&rootCmdFlags.provisionMachinesCount, "provision-machines", 0, "provisions machines through the infrastructure provider")
+	rootCmd.Flags().StringVar(&rootCmdFlags.infraProvider, "infra-provider", "talemu", "use infra provider with the specified ID when provisioning the machines")
+	rootCmd.Flags().StringVar(&rootCmdFlags.providerData, "provider-data", "{}", "the infra provider machine template data to use")
 }
 
 // withContext wraps with CLI context.

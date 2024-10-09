@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,7 +47,9 @@ import (
 
 	"github.com/siderolabs/omni/client/api/omni/specs"
 	"github.com/siderolabs/omni/client/pkg/constants"
+	"github.com/siderolabs/omni/client/pkg/jointoken"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/siderolink"
 	"github.com/siderolabs/omni/internal/pkg/auth/actor"
 	"github.com/siderolabs/omni/internal/pkg/config"
@@ -625,10 +628,13 @@ func (manager *Manager) updateConnectionParams(ctx context.Context, siderolinkCo
 		spec.ApiEndpoint = config.Config.SideroLinkAPIURL
 		spec.JoinToken = siderolinkConfig.TypedSpec().Value.JoinToken
 		spec.WireguardEndpoint = siderolinkConfig.TypedSpec().Value.AdvertisedEndpoint
+		spec.UseGrpcTunnel = config.Config.SiderolinkUseGRPCTunnel
+		spec.LogsPort = int32(config.Config.LogServerPort)
+		spec.EventsPort = int32(config.Config.EventSinkPort)
 
 		var url string
 
-		url, err = siderolink.APIURL(res, config.Config.SiderolinkUseGRPCTunnel)
+		url, err = siderolink.APIURL(res)
 		if err != nil {
 			return err
 		}
@@ -668,7 +674,18 @@ func (manager *Manager) getLink(ctx context.Context, req *pb.ProvisionRequest, i
 			return nil, false, status.Error(codes.PermissionDenied, "cannot accept new nodes if no join token is set")
 		}
 
-		if req.JoinToken == nil || *req.JoinToken != manager.wgConfig().JoinToken {
+		if req.JoinToken == nil {
+			return nil, false, status.Error(codes.PermissionDenied, "empty join token")
+		}
+
+		var token jointoken.JoinToken
+
+		token, err = jointoken.Parse(*req.JoinToken)
+		if err != nil {
+			return nil, false, status.Errorf(codes.PermissionDenied, "invalid join token %s", err)
+		}
+
+		if !token.IsValid(manager.wgConfig().JoinToken) {
 			return nil, false, status.Error(codes.PermissionDenied, "invalid join token")
 		}
 
@@ -683,6 +700,10 @@ func (manager *Manager) getLink(ctx context.Context, req *pb.ProvisionRequest, i
 
 		link := siderolink.NewLink(siderolink.Namespace, id, spec)
 
+		if value, ok := token.ExtraData[omni.LabelInfraProviderID]; ok {
+			link.Metadata().Annotations().Set(omni.LabelInfraProviderID, value)
+		}
+
 		if err = manager.state.Create(ctx, link); err != nil {
 			return nil, false, err
 		}
@@ -695,10 +716,6 @@ func (manager *Manager) getLink(ctx context.Context, req *pb.ProvisionRequest, i
 
 func getRemoteAddr(ctx context.Context) string {
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if vals := md.Get("X-Real-IP"); vals != nil {
-			return vals[0]
-		}
-
 		if vals := md.Get("X-Forwarded-For"); vals != nil {
 			return vals[0]
 		}
@@ -780,8 +797,10 @@ func (manager *Manager) Provision(ctx context.Context, req *pb.ProvisionRequest)
 		endpoint = spec.VirtualAddrport
 	}
 
+	endpoints := strings.Split(endpoint, ",")
+
 	return &pb.ProvisionResponse{
-		ServerEndpoint:    pb.MakeEndpoints(endpoint),
+		ServerEndpoint:    pb.MakeEndpoints(endpoints...),
 		ServerPublicKey:   manager.wgConfig().PublicKey,
 		NodeAddressPrefix: spec.NodeSubnet,
 		ServerAddress:     manager.wgConfig().ServerAddress,

@@ -9,10 +9,12 @@ package backend
 import (
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -20,6 +22,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +35,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	protobufserver "github.com/cosi-project/runtime/pkg/state/protobuf/server"
 	"github.com/crewjam/saml/samlsp"
+	"github.com/fsnotify/fsnotify"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
@@ -40,7 +44,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	service "github.com/siderolabs/discovery-service/pkg/service"
-	"github.com/siderolabs/gen/value"
 	"github.com/siderolabs/go-api-signature/pkg/pgp"
 	"github.com/siderolabs/go-retry/retry"
 	talosconstants "github.com/siderolabs/talos/pkg/machinery/constants"
@@ -91,6 +94,7 @@ import (
 	"github.com/siderolabs/omni/internal/pkg/kms"
 	"github.com/siderolabs/omni/internal/pkg/machinestatus"
 	"github.com/siderolabs/omni/internal/pkg/siderolink"
+	"github.com/siderolabs/omni/internal/pkg/xcontext"
 )
 
 // Server is main backend entrypoint that starts REST API, WebSocket and Serves static contents.
@@ -188,31 +192,9 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 
-	imageFactoryHandler := handler.NewAuthConfig(
-		handler.NewSignature(
-			&factory.Handler{
-				State:  runtimeState,
-				Logger: s.logger.With(logging.Component("factory_proxy")),
-			},
-			s.authenticatorFunc(),
-			s.logger,
-		),
-		authres.Enabled(s.authConfig),
-		s.logger,
-	)
-
-	var samlHandler *samlsp.Middleware
-
-	if s.authConfig.TypedSpec().Value.Saml.Enabled {
-		samlHandler, err = saml.NewHandler(s.omniRuntime.State(), s.authConfig.TypedSpec().Value.Saml, s.logger) //nolint:contextcheck
-		if err != nil {
-			return err
-		}
-	}
-
-	mux, err := makeMux(imageFactoryHandler, oidcProvider, samlHandler, s.omniRuntime, s.logger)
+	mux, err := s.makeMux(oidcProvider) //nolint:contextcheck
 	if err != nil {
-		return fmt.Errorf("failed to create mux: %w", err)
+		return err
 	}
 
 	serverOptions, err := s.buildServerOptions() //nolint:contextcheck
@@ -220,8 +202,8 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 
-	serviceServers, err := grpcomni.MakeServiceServers(
-		runtimeState,
+	services := grpcomni.MakeServiceServers(
+		s.omniRuntime.State(),
 		s.omniRuntime.CachedState(),
 		s.logHandler,
 		oidcProvider,
@@ -231,62 +213,39 @@ func (s *Server) Run(ctx context.Context) error {
 		s.logger,
 		s.auditor,
 	)
+
+	actualSrv, gtwyDialsTo, err := s.serverAndGateway(ctx, services, mux, serverOptions...)
 	if err != nil {
 		return err
 	}
 
-	gatewayTransport := memconn.NewTransport("gateway-conn")
-
-	grpcServer, err := grpcomni.New(ctx, mux, serviceServers, gatewayTransport, s.logger, serverOptions...)
+	proxyServer, prxDialsTo, err := s.makeProxyServer(ctx, eg)
 	if err != nil {
 		return err
 	}
 
-	grpcTransport := memconn.NewTransport("grpc-conn")
+	var crtData *certData
 
-	rtr, err := router.NewRouter(
-		grpcTransport,
-		runtimeState,
-		s.dnsService,
-		authres.Enabled(s.authConfig),
-		s.auditor,
-		interceptor.NewSignature(s.authenticatorFunc(), s.logger).Unary(),
-	)
-	if err != nil {
-		return err
+	if s.certFile != "" && s.keyFile != "" {
+		crtData = &certData{certFile: s.certFile, keyFile: s.keyFile}
 	}
-
-	prometheus.MustRegister(rtr)
-
-	eg.Go(func() error { return rtr.ResourceWatcher(ctx, runtimeState, s.logger) })
-
-	grpcProxyServer := router.NewServer(rtr,
-		router.Interceptors(s.logger),
-		grpc.ChainStreamInterceptor(
-			grpcutil.StreamSetAuditData(),
-			// enabled is always true here because we are interested in audit data rather than auth process
-			interceptor.NewAuthConfig(true, s.logger).Stream(),
-		),
-		grpc.MaxRecvMsgSize(constants.GRPCMaxMessageSize),
-	)
-	crtData := certData{certFile: s.certFile, keyFile: s.keyFile}
 
 	workloadProxyHandler, err := s.workloadProxyHandler(mux)
 	if err != nil {
 		return fmt.Errorf("failed to create workload proxy handler: %w", err)
 	}
 
-	unifiedHandler := unifyHandler(workloadProxyHandler, grpcProxyServer, crtData)
+	apiSrv := s.makeAPIServer(workloadProxyHandler, proxyServer, crtData)
 
 	fns := []func() error{
-		func() error { return runGRPCServer(ctx, grpcProxyServer, gatewayTransport, s.logger) },
-		func() error { return runAPIServer(ctx, unifiedHandler, s.bindAddress, crtData, s.logger) },
-		func() error { return runGRPCServer(ctx, grpcServer, grpcTransport, s.logger) },
+		func() error { return proxyServer.Serve(ctx, gtwyDialsTo) },
+		func() error { return actualSrv.Serve(ctx, prxDialsTo) },
+		func() error { return apiSrv.Run(ctx) },
 		func() error { return runMetricsServer(ctx, s.metricsBindAddress, s.logger) },
 		func() error {
-			return runK8sProxyServer(ctx, s.k8sProxyBindAddress, oidcStorage, crtData, runtimeState, s.auditor, s.logger)
+			return runK8sProxyServer(ctx, s.k8sProxyBindAddress, oidcStorage, crtData, s.omniRuntime.State(), s.auditor, s.logger)
 		},
-		func() error { return s.proxyServer.Run(ctx, unifiedHandler, s.logger) },
+		func() error { return s.proxyServer.Run(ctx, apiSrv.Handler(), s.logger) },
 		func() error { return s.logHandler.Start(ctx) },
 		func() error { return s.runMachineAPI(ctx) },
 		func() error { return s.auditor.RunCleanup(ctx) },
@@ -315,6 +274,96 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	return eg.Wait()
+}
+
+func (s *Server) makeMux(oidcProvider *oidc.Provider) (*http.ServeMux, error) {
+	imageFactoryHandler := handler.NewAuthConfig(
+		handler.NewSignature(
+			&factory.Handler{
+				State:  s.omniRuntime.State(),
+				Logger: s.logger.With(logging.Component("factory_proxy")),
+			},
+			s.authenticatorFunc(),
+			s.logger,
+		),
+		authres.Enabled(s.authConfig),
+		s.logger,
+	)
+
+	samlHandler, err := func() (*samlsp.Middleware, error) {
+		if !s.authConfig.TypedSpec().Value.Saml.Enabled {
+			return nil, nil //nolint:nilnil
+		}
+
+		return saml.NewHandler(s.omniRuntime.State(), s.authConfig.TypedSpec().Value.Saml, s.logger)
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	mux, err := makeMux(imageFactoryHandler, oidcProvider, samlHandler, s.omniRuntime, s.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mux: %w", err)
+	}
+
+	return mux, err
+}
+
+func (s *Server) serverAndGateway(
+	ctx context.Context,
+	services iter.Seq2[grpcomni.ServiceServer, error],
+	registerTo *http.ServeMux,
+	serverOptions ...grpc.ServerOption,
+) (*grpcServer, *memconn.Transport, error) {
+	actualSrv, err := grpcomni.NewServer(services, serverOptions...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	gtwyDialsTo, err := grpcomni.RegisterGateway(ctx, services, registerTo, s.logger)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &grpcServer{
+		server: actualSrv,
+		logger: s.logger,
+	}, gtwyDialsTo, nil
+}
+
+func (s *Server) makeProxyServer(ctx context.Context, eg *errgroup.Group) (*grpcServer, *memconn.Transport, error) {
+	transport := memconn.NewTransport("grpc-conn")
+
+	rtr, err := router.NewRouter(
+		transport,
+		s.omniRuntime.State(),
+		s.dnsService,
+		authres.Enabled(s.authConfig),
+		s.auditor,
+		interceptor.NewSignature(s.authenticatorFunc(), s.logger).Unary(),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	prometheus.MustRegister(rtr)
+
+	eg.Go(func() error { return rtr.ResourceWatcher(ctx, s.omniRuntime.State(), s.logger) })
+
+	srv := router.NewServer(rtr,
+		router.Interceptors(s.logger),
+		grpc.ChainStreamInterceptor(
+			grpcutil.StreamSetAuditData(),
+			// enabled is always true here because we are interested in audit data rather than auth process
+			interceptor.NewAuthConfig(true, s.logger).Stream(),
+		),
+		grpc.MaxRecvMsgSize(constants.GRPCMaxMessageSize),
+	)
+
+	return &grpcServer{
+		server: srv,
+		logger: s.logger,
+	}, transport, nil
 }
 
 // buildServerOptions builds the gRPC server options.
@@ -579,6 +628,51 @@ func (s *Server) workloadProxyHandler(next http.Handler) (http.Handler, error) {
 	)
 }
 
+func (s *Server) makeAPIServer(regular http.Handler, grpcServer *grpcServer, data *certData) *apiServer {
+	wrap := func(fn func(w http.ResponseWriter, req *http.Request)) http.Handler {
+		if data != nil {
+			return http.HandlerFunc(fn)
+		}
+
+		// If we don't have TLS data, wrap the handler in http2.Server
+		return h2c.NewHandler(http.HandlerFunc(fn), &http2.Server{})
+	}
+
+	srv := &http.Server{
+		Addr: s.bindAddress,
+		Handler: wrap(func(w http.ResponseWriter, req *http.Request) {
+			if req.ProtoMajor == 2 && strings.HasPrefix(
+				req.Header.Get("Content-Type"), "application/grpc") {
+				// grpcServer provides top-level gRPC proxy handler.
+				grpcServer.ServeHTTP(w, setRealIPRequest(req))
+
+				return
+			}
+
+			// handler contains "regular" HTTP handlers
+			regular.ServeHTTP(w, req)
+		}),
+	}
+
+	return &apiServer{
+		srv:    srv,
+		cert:   data,
+		logger: s.logger.With(zap.String("server", s.bindAddress), zap.String("server_type", "api")),
+	}
+}
+
+type apiServer struct {
+	srv    *http.Server
+	cert   *certData
+	logger *zap.Logger
+}
+
+func (s *apiServer) Run(ctx context.Context) error {
+	return (&server{server: s.srv, certData: s.cert}).Run(ctx, s.logger)
+}
+
+func (s *apiServer) Handler() http.Handler { return s.srv.Handler }
+
 func recoveryHandler(logger *zap.Logger) grpc_recovery.RecoveryHandlerFunc {
 	return func(p any) error {
 		if logger != nil {
@@ -752,9 +846,7 @@ func runMetricsServer(ctx context.Context, bindAddress string, logger *zap.Logge
 
 	logger = logger.With(zap.String("server", bindAddress), zap.String("server_type", "metrics"))
 
-	return runServer(ctx, &server{
-		server: metricsServer,
-	}, logger)
+	return (&server{server: metricsServer}).Run(ctx, logger)
 }
 
 type oidcStore interface {
@@ -765,7 +857,7 @@ func runK8sProxyServer(
 	ctx context.Context,
 	bindAddress string,
 	oidcStorage oidcStore,
-	data certData,
+	data *certData,
 	runtimeState state.State,
 	wrapper k8sproxy.MiddlewareWrapper,
 	logger *zap.Logger,
@@ -807,30 +899,13 @@ func runK8sProxyServer(
 
 	logger = logger.With(zap.String("server", bindAddress), zap.String("server_type", "k8s_proxy"))
 
-	return runServer(ctx, &server{
-		server:   k8sProxyServer,
-		certData: data,
-	}, logger)
+	return (&server{server: k8sProxyServer, certData: data}).Run(ctx, logger)
 }
 
-func runAPIServer(ctx context.Context, handler http.Handler, bindAddress string, data certData, logger *zap.Logger) error {
-	srv := &http.Server{
-		Addr:    bindAddress,
-		Handler: handler,
-	}
-
-	logger = logger.With(zap.String("server", bindAddress), zap.String("server_type", "api"))
-
-	return runServer(ctx, &server{
-		server:   srv,
-		certData: data,
-	}, logger)
-}
-
-// setRealIPRequest extracts ip from the request and sets it to the X-Real-IP header if there is neither X-Real-IP nore
-// X-Forwarded-For.
+// setRealIPRequest extracts ip from the request and sets it to the X-Forwarded-For header if there is no
+// existing X-Forwarded-For.
 func setRealIPRequest(req *http.Request) *http.Request {
-	if req.Header.Get("X-Real-IP") != "" || req.Header.Get("X-Forwarded-For") != "" {
+	if req.Header.Get("X-Forwarded-For") != "" {
 		return req
 	}
 
@@ -841,69 +916,181 @@ func setRealIPRequest(req *http.Request) *http.Request {
 
 	newReq := req.Clone(req.Context())
 
-	newReq.Header.Set("X-Real-IP", actualIP)
+	newReq.Header.Set("X-Forwarded-For", actualIP)
 
 	return newReq
 }
 
 type server struct {
-	server *http.Server
-	certData
+	server   *http.Server
+	certData *certData
 }
 
 type certData struct {
+	cert     tls.Certificate
 	certFile string
 	keyFile  string
+	mu       sync.Mutex
+	loaded   bool
 }
 
-func (s *server) ListenAndServe() error {
-	if s.certFile != "" || s.keyFile != "" {
-		return s.server.ListenAndServeTLS(s.certFile, s.keyFile)
+func (c *certData) load() error {
+	cert, err := tls.LoadX509KeyPair(c.certFile, c.keyFile)
+	if err != nil {
+		return err
 	}
 
-	return s.server.ListenAndServe()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.loaded = true
+	c.cert = cert
+
+	return nil
 }
 
-func (s *server) Shutdown(ctx context.Context) error {
-	err := s.server.Shutdown(ctx)
-	if errors.Is(ctx.Err(), err) {
-		closeErr := s.server.Close()
-		if closeErr != nil {
-			return fmt.Errorf("failed to close server: %w", closeErr)
+func (c *certData) getCert() (*tls.Certificate, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.loaded {
+		return nil, fmt.Errorf("the cert wasn't loaded yet")
+	}
+
+	return &c.cert, nil
+}
+
+func (c *certData) runWatcher(ctx context.Context, logger *zap.Logger) error {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("error creating fsnotify watcher: %w", err)
+	}
+	defer w.Close() //nolint:errcheck
+
+	if err = w.Add(c.certFile); err != nil {
+		return fmt.Errorf("error adding watch for file %s: %w", c.certFile, err)
+	}
+
+	if err = w.Add(c.keyFile); err != nil {
+		return fmt.Errorf("error adding watch for file %s: %w", c.keyFile, err)
+	}
+
+	handleEvent := func(e fsnotify.Event) error {
+		defer func() {
+			if err = c.load(); err != nil {
+				logger.Error("failed to load certs", zap.Error(err))
+
+				return
+			}
+
+			logger.Info("reloaded certs")
+		}()
+
+		if !e.Has(fsnotify.Remove) && !e.Has(fsnotify.Rename) {
+			return nil
 		}
-	}
 
-	return err
-}
+		if err = w.Remove(e.Name); err != nil {
+			logger.Error("failed to remove file watch, it may have been deleted", zap.String("file", e.Name), zap.Error(err))
+		}
 
-func runServer(ctx context.Context, srv *server, logger *zap.Logger) error {
-	logger.Info("server starting")
-	defer logger.Info("server stopped")
-
-	errCh := make(chan error, 1)
-
-	panichandler.Go(func() {
-		errCh <- srv.ListenAndServe()
-	}, logger)
-
-	select {
-	case err := <-errCh:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("failed to serve: %w", err)
+		if err = w.Add(e.Name); err != nil {
+			return fmt.Errorf("error adding watch for file %s: %w", e.Name, err)
 		}
 
 		return nil
-	case <-ctx.Done():
-		logger.Info("server stopping")
 	}
 
-	shutdownCtx, shutdownCtxCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCtxCancel()
+	for {
+		select {
+		case e := <-w.Events:
+			if err = handleEvent(e); err != nil {
+				return err
+			}
+		case err = <-w.Errors:
+			return fmt.Errorf("received fsnotify error: %w", err)
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
 
-	//nolint:contextcheck
-	err := srv.Shutdown(shutdownCtx)
-	if err != nil {
-		logger.Error("failed to gracefully stop server", zap.Error(err))
+func (s *server) Run(ctx context.Context, logger *zap.Logger) error {
+	logger.Info("server starting")
+	defer logger.Info("server stopped")
+
+	stop := xcontext.AfterFuncSync(ctx, func() { //nolint:contextcheck
+		logger.Info("server stopping")
+
+		shutdownCtx, shutdownCtxCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCtxCancel()
+
+		err := s.shutdown(shutdownCtx)
+		if err != nil {
+			logger.Error("failed to gracefully stop server", zap.Error(err))
+		}
+	})
+
+	defer stop()
+
+	if err := s.listenAndServe(ctx, logger); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("failed to serve: %w", err)
+	}
+
+	return nil
+}
+
+func (s *server) listenAndServe(ctx context.Context, logger *zap.Logger) error {
+	if s.certData == nil {
+		return s.server.ListenAndServe()
+	}
+
+	if err := s.certData.load(); err != nil {
+		return err
+	}
+
+	s.server.TLSConfig = &tls.Config{
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return s.certData.getCert()
+		},
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	eg := panichandler.NewErrGroup()
+
+	eg.Go(func() error {
+		for {
+			err := s.certData.runWatcher(ctx, logger)
+
+			if err == nil {
+				return nil
+			}
+
+			logger.Error("cert watcher crashed, restarting in 5 seconds", zap.Error(err))
+
+			time.Sleep(time.Second * 5)
+		}
+	})
+
+	eg.Go(func() error {
+		defer cancel()
+
+		return s.server.ListenAndServeTLS("", "")
+	})
+
+	return eg.Wait()
+}
+
+func (s *server) shutdown(ctx context.Context) error {
+	err := s.server.Shutdown(ctx)
+	if !errors.Is(ctx.Err(), err) {
+		return err
+	}
+
+	if closeErr := s.server.Close(); closeErr != nil {
+		return fmt.Errorf("failed to close server: %w", closeErr)
 	}
 
 	return err
@@ -985,60 +1172,6 @@ func runEmbeddedDiscoveryService(ctx context.Context, logger *zap.Logger) error 
 	return nil
 }
 
-func runGRPCServer(ctx context.Context, server *grpc.Server, transport *memconn.Transport, logger *zap.Logger) error {
-	grpcListener, err := transport.Listener()
-	if err != nil {
-		return fmt.Errorf("failed to create listener: %w", err)
-	}
-
-	logger.Info("internal API server starting", zap.String("address", grpcListener.Addr().String()))
-	defer logger.Info("internal API server stopped")
-
-	errCh := make(chan error, 1)
-
-	panichandler.Go(func() {
-		errCh <- server.Serve(grpcListener)
-	}, logger)
-
-	select {
-	case err := <-errCh:
-		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			return fmt.Errorf("failed to serve: %w", err)
-		}
-
-		return nil
-	case <-ctx.Done():
-		logger.Info("grpc server stopping")
-	}
-
-	// Since we use a memconn transport and ServeHTTP, we can't use the graceful shutdown
-	server.Stop()
-
-	return nil
-}
-
-func unifyHandler(handler http.Handler, grpcServer *grpc.Server, data certData) http.Handler {
-	h := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.ProtoMajor == 2 && strings.HasPrefix(
-			req.Header.Get("Content-Type"), "application/grpc") {
-			// grpcProxyServer provides top-level gRPC proxy handler.
-			grpcServer.ServeHTTP(w, setRealIPRequest(req))
-
-			return
-		}
-
-		// handler contains "regular" HTTP handlers
-		handler.ServeHTTP(w, req)
-	}))
-
-	if value.IsZero(data) {
-		// If we don't have TLS data, wrap the handler in http2.Server
-		h = h2c.NewHandler(h, &http2.Server{})
-	}
-
-	return h
-}
-
 func runPprofServer(ctx context.Context, bindAddress string, l *zap.Logger) error {
 	mux := &http.ServeMux{}
 
@@ -1055,7 +1188,7 @@ func runPprofServer(ctx context.Context, bindAddress string, l *zap.Logger) erro
 
 	l = l.With(zap.String("server", bindAddress), zap.String("server_type", "pprof"))
 
-	return runServer(ctx, &server{server: srv}, l)
+	return (&server{server: srv}).Run(ctx, l)
 }
 
 //nolint:unparam
@@ -1193,7 +1326,38 @@ var assetsData = []struct {
 // Auditor is a common interface for audit log.
 type Auditor interface {
 	RunCleanup(context.Context) error
-	ReadAuditLog() (io.ReadCloser, error)
+	ReadAuditLog(start, end time.Time) (io.ReadCloser, error)
 	router.TalosAuditor
 	k8sproxy.MiddlewareWrapper
 }
+
+type grpcServer struct {
+	server *grpc.Server
+	logger *zap.Logger
+}
+
+func (s *grpcServer) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.server.ServeHTTP(w, r) }
+func (s *grpcServer) Serve(ctx context.Context, from listenerBuilder) error {
+	listenFrom, err := from.Listener()
+	if err != nil {
+		return fmt.Errorf("failed to create listener: %w", err)
+	}
+
+	s.logger.Info("internal API server starting", zap.String("address", listenFrom.Addr().String()))
+	defer s.logger.Info("internal API server stopped")
+
+	defer xcontext.AfterFuncSync(ctx, func() {
+		s.logger.Info("internal API server stopping")
+
+		// Since we use a memconn transport and ServeHTTP, we can't use the graceful shutdown
+		s.server.Stop()
+	})()
+
+	if err = s.server.Serve(listenFrom); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		return fmt.Errorf("failed to serve: %w", err)
+	}
+
+	return nil
+}
+
+type listenerBuilder interface{ Listener() (net.Listener, error) }

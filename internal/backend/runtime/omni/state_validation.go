@@ -6,10 +6,12 @@
 package omni
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -19,11 +21,14 @@ import (
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/hashicorp/go-multierror"
+	"github.com/santhosh-tekuri/jsonschema/v5"
+	"gopkg.in/yaml.v3"
 
 	"github.com/siderolabs/omni/client/api/omni/specs"
 	"github.com/siderolabs/omni/client/pkg/cosi/labels"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
 	authres "github.com/siderolabs/omni/client/pkg/omni/resources/auth"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/controllers/omni/etcdbackup/store"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/validated"
@@ -52,25 +57,14 @@ func clusterValidationOptions(st state.State, etcdBackupConfig config.EtcdBackup
 			return fmt.Errorf("invalid talos version %q: %w", res.TypedSpec().Value.TalosVersion, err)
 		}
 
-		currentVersionIsDeprecated := false
+		var currentTalosVersion string
 
 		if existingRes != nil {
-			var ver *omni.TalosVersion
-
-			ver, err = safe.StateGet[*omni.TalosVersion](ctx, st, omni.NewTalosVersion(resources.DefaultNamespace, existingRes.TypedSpec().Value.TalosVersion).Metadata())
-			if err != nil && !state.IsNotFoundError(err) {
-				return err
-			}
-
-			if ver != nil {
-				currentVersionIsDeprecated = ver.TypedSpec().Value.Deprecated
-			}
+			currentTalosVersion = existingRes.TypedSpec().Value.TalosVersion
 		}
 
-		// disallow updating to the deprecated Talos version from the non-deprecated one
-		// 1.3.0 -> 1.3.7 should still work for example
-		if talosVersion.TypedSpec().Value.Deprecated && !currentVersionIsDeprecated {
-			return fmt.Errorf("talos version %q is no longer supported", res.TypedSpec().Value.TalosVersion)
+		if err = validateTalosVersion(ctx, st, currentTalosVersion, res.TypedSpec().Value.TalosVersion); err != nil {
+			return err
 		}
 
 		if skipKubernetesVersion {
@@ -321,37 +315,62 @@ func machineSetValidationOptions(st state.State, etcdBackupStoreFactory store.Fa
 			return err
 		}
 
-		spec := res.TypedSpec().Value
-		if spec.MachineClass != nil {
-			if spec.MachineClass.Name == "" {
-				return errors.New("machine set class name is not set")
+		allocationConfig := omni.GetMachineAllocation(res)
+
+		if allocationConfig != nil {
+			if allocationConfig.Name == "" {
+				return errors.New("machine allocation source name is not set")
 			}
 
-			if spec.MachineClass.MachineCount != 0 && spec.MachineClass.AllocationType != specs.MachineSetSpec_MachineClass_Static {
+			if allocationConfig.MachineCount != 0 && allocationConfig.AllocationType != specs.MachineSetSpec_MachineAllocation_Static {
 				return errors.New("machine count can be set only if static allocation type is used")
 			}
 
+			var oldAllocationConfig *specs.MachineSetSpec_MachineAllocation
+
+			if oldRes != nil {
+				oldAllocationConfig = omni.GetMachineAllocation(oldRes)
+			}
+
 			// if change machine class, verify the specified class name exists.
-			changed := oldRes == nil || oldRes.TypedSpec().Value.MachineClass != nil && oldRes.TypedSpec().Value.MachineClass.Name != spec.MachineClass.Name
+			changed := oldRes == nil || oldAllocationConfig != nil && oldAllocationConfig.Name != allocationConfig.Name
 			if changed {
-				_, err := st.Get(ctx, omni.NewMachineClass(resources.DefaultNamespace, spec.MachineClass.Name).Metadata())
-				if err != nil {
-					if state.IsNotFoundError(err) {
-						return fmt.Errorf("machine class with name %q doesn't exist", spec.MachineClass.Name)
+				switch allocationConfig.Source {
+				case specs.MachineSetSpec_MachineAllocation_MachineRequestSet:
+					_, err := st.Get(ctx, omni.NewMachineRequestSet(resources.DefaultNamespace, allocationConfig.Name).Metadata())
+					if err != nil {
+						if state.IsNotFoundError(err) {
+							return fmt.Errorf("machine request set with name %q doesn't exist", allocationConfig.Name)
+						}
+
+						return err
+					}
+				case specs.MachineSetSpec_MachineAllocation_MachineClass:
+					mc, err := safe.ReaderGetByID[*omni.MachineClass](ctx, st, allocationConfig.Name)
+					if err != nil {
+						if state.IsNotFoundError(err) {
+							return fmt.Errorf("machine class with name %q doesn't exist", allocationConfig.Name)
+						}
+
+						return err
 					}
 
-					return err
+					if mc.TypedSpec().Value.AutoProvision != nil && allocationConfig.AllocationType == specs.MachineSetSpec_MachineAllocation_Unlimited {
+						return fmt.Errorf("machine class %q is using autoprovision, so unlimited machine set allocation is not supported", allocationConfig.Name)
+					}
 				}
 			}
 		}
 
 		if oldRes != nil {
 			// ensure that the machine class type doesn't change from manually selected machines to the machine class
-			oldSpec := oldRes.TypedSpec().Value
+			oldAllocationConfig := omni.GetMachineAllocation(oldRes)
+			newAllocationConfig := omni.GetMachineAllocation(res)
 
-			mgmtModeSwitchedToMachineClass := oldSpec.MachineClass == nil && spec.MachineClass != nil
-			mgmtModeSwitchedToManual := oldSpec.MachineClass != nil && spec.MachineClass == nil
-			mgmtModeChanged := mgmtModeSwitchedToMachineClass || mgmtModeSwitchedToManual
+			mgmtModeSwitchedToMachineClass := oldAllocationConfig == nil && newAllocationConfig != nil
+			mgmtModeSwitchedToManual := oldAllocationConfig != nil && newAllocationConfig == nil
+			mgmtModeSwitchedSource := oldAllocationConfig != nil && newAllocationConfig != nil && oldAllocationConfig.Source != newAllocationConfig.Source
+			mgmtModeChanged := mgmtModeSwitchedToMachineClass || mgmtModeSwitchedToManual || mgmtModeSwitchedSource
 
 			if mgmtModeChanged {
 				machineSetNodeList, err := safe.StateListAll[*omni.MachineSetNode](ctx, st, state.WithLabelQuery(resource.LabelEqual(omni.LabelMachineSet, res.Metadata().ID())))
@@ -362,6 +381,8 @@ func machineSetValidationOptions(st state.State, etcdBackupStoreFactory store.Fa
 				// block management mode change only if there are nodes in the machine set
 				if machineSetNodeList.Len() > 0 {
 					switch {
+					case mgmtModeSwitchedSource:
+						return errors.New("machine set is not empty, updating source is not allowed")
 					case mgmtModeSwitchedToMachineClass:
 						return errors.New("machine set is not empty and is using manual nodes management, updating to machine class mode is not allowed")
 					case mgmtModeSwitchedToManual:
@@ -408,8 +429,57 @@ func machineSetValidationOptions(st state.State, etcdBackupStoreFactory store.Fa
 }
 
 // machineClassValidationOptions returns the validation options for the machine class resource.
+//
+//nolint:gocognit
 func machineClassValidationOptions(st state.State) []validated.StateOption {
+	validate := func(ctx context.Context, oldRes, res *omni.MachineClass) error {
+		if res.TypedSpec().Value.AutoProvision != nil && res.TypedSpec().Value.MatchLabels != nil {
+			return errors.New("can't set both auto provision and match labels at the same time")
+		}
+
+		if res.TypedSpec().Value.AutoProvision != nil {
+			autoProvision := res.TypedSpec().Value.AutoProvision
+
+			if autoProvision.ProviderId == "" {
+				return errors.New("providerID can not be empty")
+			}
+
+			if autoProvision.TalosVersion == "" {
+				return errors.New("talos version can not be empty")
+			}
+
+			if err := validateTalosVersion(ctx, st, "", autoProvision.TalosVersion); err != nil {
+				return err
+			}
+
+			if oldRes == nil || oldRes.TypedSpec().Value.AutoProvision.ProviderData != autoProvision.ProviderData {
+				if err := validateProviderData(ctx, st, autoProvision.ProviderId, autoProvision.ProviderData); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}
+
+		queries, err := labels.ParseSelectors(res.TypedSpec().Value.MatchLabels)
+		if err != nil {
+			return fmt.Errorf("failed to parse matchLabels: %w", err)
+		}
+
+		if len(queries) == 0 {
+			return fmt.Errorf("machine class should either have auto provision or match labels set")
+		}
+
+		return nil
+	}
+
 	return []validated.StateOption{
+		validated.WithCreateValidations(validated.NewCreateValidationForType(func(ctx context.Context, res *omni.MachineClass, _ ...state.CreateOption) error {
+			return validate(ctx, nil, res)
+		})),
+		validated.WithUpdateValidations(validated.NewUpdateValidationForType(func(ctx context.Context, oldRes *omni.MachineClass, res *omni.MachineClass, _ ...state.UpdateOption) error {
+			return validate(ctx, oldRes, res)
+		})),
 		validated.WithDestroyValidations(validated.NewDestroyValidationForType(func(ctx context.Context, _ resource.Pointer, res *omni.MachineClass, _ ...state.DestroyOption) error {
 			machineSets, err := safe.ReaderListAll[*omni.MachineSet](ctx, st)
 			if err != nil {
@@ -419,7 +489,7 @@ func machineClassValidationOptions(st state.State) []validated.StateOption {
 			var inUseBy []string
 
 			machineSets.ForEach(func(r *omni.MachineSet) {
-				if r.TypedSpec().Value.MachineClass != nil && r.TypedSpec().Value.MachineClass.Name == res.Metadata().ID() {
+				if alloc := omni.GetMachineAllocation(r); alloc != nil && alloc.Source == specs.MachineSetSpec_MachineAllocation_MachineClass && res.Metadata().ID() == alloc.Name {
 					inUseBy = append(inUseBy, r.Metadata().ID())
 				}
 			})
@@ -585,8 +655,8 @@ func machineSetNodeValidationOptions(st state.State) []validated.StateOption {
 				return fmt.Errorf("the machine set %q is tearing down", machineSet.Metadata().ID())
 			}
 
-			if machineSet != nil && machineSet.TypedSpec().Value.MachineClass != nil {
-				return fmt.Errorf("adding machine set node to the machine set %q is not allowed: the machine set is using machine classes", machineSet.Metadata().ID())
+			if machineSet != nil && omni.GetMachineAllocation(machineSet) != nil {
+				return fmt.Errorf("adding machine set node to the machine set %q is not allowed: the machine set is using automated machine allocation", machineSet.Metadata().ID())
 			}
 
 			if err = validateTalosVersion(ctx, res); err != nil {
@@ -744,15 +814,39 @@ func configPatchValidationOptions(st state.State) []validated.StateOption {
 				}
 			}
 
-			return omni.ValidateConfigPatch(res.TypedSpec().Value.GetData())
+			buffer, err := res.TypedSpec().Value.GetUncompressedData()
+			if err != nil {
+				return err
+			}
+
+			defer buffer.Free()
+
+			return omni.ValidateConfigPatch(buffer.Data())
 		})),
 		validated.WithUpdateValidations(validated.NewUpdateValidationForType(func(_ context.Context, oldRes *omni.ConfigPatch, newRes *omni.ConfigPatch, _ ...state.UpdateOption) error {
 			// keep the old config patch if the data is the same for backwards-compatibility and for teardown cases
-			if oldRes.TypedSpec().Value.Data == newRes.TypedSpec().Value.Data {
+			oldBuffer, err := oldRes.TypedSpec().Value.GetUncompressedData()
+			if err != nil {
+				return err
+			}
+
+			defer oldBuffer.Free()
+
+			newBuffer, err := newRes.TypedSpec().Value.GetUncompressedData()
+			if err != nil {
+				return err
+			}
+
+			defer newBuffer.Free()
+
+			oldData := oldBuffer.Data()
+			newData := newBuffer.Data()
+
+			if bytes.Equal(oldData, newData) {
 				return nil
 			}
 
-			return omni.ValidateConfigPatch(newRes.TypedSpec().Value.GetData())
+			return omni.ValidateConfigPatch(newData)
 		})),
 	}
 }
@@ -879,4 +973,104 @@ func validateSchematicConfiguration(schematicConfiguration *omni.SchematicConfig
 	}
 
 	return nil
+}
+
+func machineRequestSetValidationOptions(st state.State) []validated.StateOption {
+	return []validated.StateOption{
+		validated.WithCreateValidations(validated.NewCreateValidationForType(func(ctx context.Context, res *omni.MachineRequestSet, _ ...state.CreateOption) error {
+			return validateMachineRequestSet(ctx, st, nil, res)
+		})),
+		validated.WithUpdateValidations(validated.NewUpdateValidationForType(func(ctx context.Context, oldRes *omni.MachineRequestSet, newRes *omni.MachineRequestSet, _ ...state.UpdateOption) error {
+			return validateMachineRequestSet(ctx, st, oldRes, newRes)
+		})),
+	}
+}
+
+func validateMachineRequestSet(ctx context.Context, st state.State, oldRes, res *omni.MachineRequestSet) error {
+	if res.TypedSpec().Value.ProviderId == "" {
+		return fmt.Errorf("provider id can not be empty")
+	}
+
+	if oldRes == nil || oldRes.TypedSpec().Value.ProviderData != res.TypedSpec().Value.ProviderData {
+		if err := validateProviderData(ctx, st, res.TypedSpec().Value.ProviderId, res.TypedSpec().Value.ProviderData); err != nil {
+			return err
+		}
+	}
+
+	return validateTalosVersion(ctx, st, "", res.TypedSpec().Value.TalosVersion)
+}
+
+func validateTalosVersion(ctx context.Context, st state.State, current, newVersion string) error {
+	var currentVersionIsDeprecated bool
+
+	talosVersion, err := safe.StateGet[*omni.TalosVersion](ctx, st, omni.NewTalosVersion(resources.DefaultNamespace, newVersion).Metadata())
+	if err != nil {
+		return fmt.Errorf("invalid talos version %q: %w", newVersion, err)
+	}
+
+	if current != "" {
+		var ver *omni.TalosVersion
+
+		ver, err := safe.StateGet[*omni.TalosVersion](ctx, st, omni.NewTalosVersion(resources.DefaultNamespace, current).Metadata())
+		if err != nil && !state.IsNotFoundError(err) {
+			return err
+		}
+
+		if ver != nil {
+			currentVersionIsDeprecated = ver.TypedSpec().Value.Deprecated
+		}
+	}
+
+	// disallow updating to the deprecated Talos version from the non-deprecated one
+	// 1.3.0 -> 1.3.7 should still work for example
+	if talosVersion.TypedSpec().Value.Deprecated && !currentVersionIsDeprecated {
+		return fmt.Errorf("talos version %q is no longer supported", newVersion)
+	}
+
+	return nil
+}
+
+func validateProviderData(ctx context.Context, st state.State, providerID, providerData string) error {
+	validateSchema := func(providerStatus *infra.ProviderStatus) error {
+		if providerStatus.TypedSpec().Value.Schema == "" {
+			return nil
+		}
+
+		filename := fmt.Sprintf("%s-schema.json", providerStatus.Metadata().ID())
+
+		compiler := jsonschema.NewCompiler()
+		if err := compiler.AddResource(filename, strings.NewReader(providerStatus.TypedSpec().Value.Schema)); err != nil {
+			return fmt.Errorf("failed to load json schema for provider %q: %w", providerID, err)
+		}
+
+		schema, err := compiler.Compile(filename)
+		if err != nil {
+			return fmt.Errorf("failed to load json schema for provider %q: %w", providerID, err)
+		}
+
+		// NaN type causes jsonschema validator to crash with nil reference error
+		providerData = regexp.MustCompile(`(?i)\.nan`).ReplaceAllString(providerData, "null")
+
+		var v interface{}
+		if err = yaml.Unmarshal([]byte(providerData), &v); err != nil {
+			return fmt.Errorf("failed to unmarshal provider data %w", err)
+		}
+
+		if v == nil {
+			v = map[string]any{}
+		}
+
+		if err = schema.Validate(v); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	providerStatus, err := safe.ReaderGetByID[*infra.ProviderStatus](ctx, st, providerID)
+	if err != nil {
+		return fmt.Errorf("failed to get provider: %w", err)
+	}
+
+	return validateSchema(providerStatus)
 }

@@ -175,7 +175,7 @@ spec:
       WITH_DEBUG: "true"
       INTEGRATION_RUN_E2E_TEST: "true"
       INTEGRATION_TEST_ARGS: "--test.run CleanState/|Auth/|DefaultCluster/"
-      TALEMU_TEST_ARGS: "--test.run ImmediateClusterDestruction/|EncryptedCluster/|SinglenodeCluster/|ScaleUpAndDown/|ScaleUpAndDownMachineClassBasedMachineSets/|TalosUpgrades/|KubernetesUpgrades/|MaintenanceDowngrade/|ClusterTemplate/"
+      TALEMU_TEST_ARGS: "--test.run ImmediateClusterDestruction/|EncryptedCluster/|SinglenodeCluster/|ScaleUpAndDown/|ScaleUpAndDownMachineClassBasedMachineSets/|TalosUpgrades/|KubernetesUpgrades/|MaintenanceDowngrade/|ClusterTemplate/|ScaleUpAndDownAutoProvisionMachineSets/"
       RUN_TALEMU_TESTS: true
     jobs:
       - name: e2e-short
@@ -351,8 +351,8 @@ spec:
     - source: client/api/omni/specs/auth.proto
       subdirectory: omni/specs
       genGateway: true
-    - source: client/api/omni/specs/cloud/cloud.proto
-      subdirectory: omni/specs/cloud
+    - source: client/api/omni/specs/infra.proto
+      subdirectory: omni/specs
       genGateway: true
     - source: client/api/omni/specs/virtual.proto
       subdirectory: omni/specs
@@ -412,7 +412,7 @@ kind: js.Protobuf
 spec:
   baseSpecPath: /client/api
   files:
-     - source: https://www.talos.dev/v1.7/schemas/config.schema.json
+     - source: https://www.talos.dev/v1.8/schemas/config.schema.json
        destination: frontend/src/schemas/config.schema.json
   destinationRoot: src/api
   specs:
@@ -443,8 +443,8 @@ spec:
     - source: client/api/omni/specs/auth.proto
       subdirectory: omni/specs
       genGateway: true
-    - source: client/api/omni/specs/cloud/cloud.proto
-      subdirectory: omni/specs/cloud
+    - source: client/api/omni/specs/infra.proto
+      subdirectory: omni/specs
       genGateway: true
     - source: client/api/omni/specs/virtual.proto
       subdirectory: omni/specs
@@ -486,6 +486,7 @@ spec:
   artifacts:
     - omnictl-*
     - omni-*
+    - integration-*
 ---
 kind: common.Image
 name: image-omni
@@ -509,7 +510,7 @@ spec:
         Licensor: Sidero Labs, Inc.
         LicensedWork: Omni
         Copyright: (c) 2024 Sidero Labs, Inc.
-        ChangeDate: "2028-08-22"
+        ChangeDate: "2028-10-09"
         ChangeLicense: Mozilla Public License, version 2.0
         EnterpriseLink: https://www.siderolabs.com/contact/
       header: |

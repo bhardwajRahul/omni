@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -71,6 +72,8 @@ type machineService struct {
 	serviceList             *machine.ServiceListResponse
 	etcdLeaveClusterHandler func(context.Context, *machine.EtcdLeaveClusterRequest) (*machine.EtcdLeaveClusterResponse, error)
 
+	metaDeleteKeyToCount map[uint32]int
+
 	address string
 	state   state.State
 }
@@ -87,6 +90,13 @@ func (ms *machineService) clearUpgradeRequests() {
 	defer ms.lock.Unlock()
 
 	ms.upgradeRequests = nil
+}
+
+func (ms *machineService) getMetaDeleteKeyToCount() map[uint32]int {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	return maps.Clone(ms.metaDeleteKeyToCount)
 }
 
 func (ms *machineService) ApplyConfiguration(_ context.Context, req *machine.ApplyConfigurationRequest) (*machine.ApplyConfigurationResponse, error) {
@@ -275,6 +285,19 @@ func (ms *machineService) ServiceList(context.Context, *emptypb.Empty) (*machine
 	return ms.serviceList, nil
 }
 
+func (ms *machineService) MetaDelete(_ context.Context, req *machine.MetaDeleteRequest) (*machine.MetaDeleteResponse, error) {
+	ms.lock.Lock()
+	defer ms.lock.Unlock()
+
+	if ms.metaDeleteKeyToCount == nil {
+		ms.metaDeleteKeyToCount = map[uint32]int{}
+	}
+
+	ms.metaDeleteKeyToCount[req.Key]++
+
+	return &machine.MetaDeleteResponse{}, nil
+}
+
 type OmniSuite struct { //nolint:govet
 	suite.Suite
 
@@ -460,11 +483,13 @@ func (suite *OmniSuite) createCluster(clusterName string, controlPlanes, workers
 		)
 
 		clusterMachineConfigPatches := omni.NewClusterMachineConfigPatches(resources.DefaultNamespace, clusterMachine.Metadata().ID())
-		clusterMachineConfigPatches.TypedSpec().Value.Patches = []string{
+
+		err := clusterMachineConfigPatches.TypedSpec().Value.SetUncompressedPatches([]string{
 			`machine:
       install:
         disk: ` + testInstallDisk,
-		}
+		})
+		suite.Require().NoError(err)
 
 		clusterMachine.TypedSpec().Value.KubernetesVersion = cluster.TypedSpec().Value.KubernetesVersion
 

@@ -52,7 +52,7 @@ included in the LICENSE file.
                     <t-icon icon="copy" class="overview-copy-icon"
                       @click="() => copyValue(items[0]?.spec?.api_endpoint)" />
                   </div>
-                  <div>Wireguard Endpoint</div>
+                  <div>WireGuard Endpoint</div>
                   <div>
                     {{ items[0]?.spec?.wireguard_endpoint }}
                     <t-icon icon="copy" class="overview-copy-icon"
@@ -115,14 +115,19 @@ included in the LICENSE file.
             </div>
             <div class="overview-card p-6 flex flex-col gap-5 place-items-stretch" style="width: 350px">
               <div class="text-naturals-N14 text-sm">CLI</div>
-              <t-button type="primary" icon="talos-config" iconPosition="left" @click="() => downloadTalosconfig()">
+              <t-button type="primary" icon="document" iconPosition="left" @click="() => downloadTalosconfig()">
                 Download <code>talosconfig</code></t-button>
               <t-button type="primary" icon="talos-config" iconPosition="left" @click="() => downloadTalosctl()">
                 Download talosctl</t-button>
-              <t-button type="primary" icon="talos-config" iconPosition="left" @click="() => downloadOmniconfig()">
+              <t-button type="primary" icon="document" iconPosition="left" @click="() => downloadOmniconfig()">
                 Download <code>omniconfig</code></t-button>
               <t-button type="primary" icon="talos-config" iconPosition="left" @click="() => downloadOmnictl()">
                 Download omnictl</t-button>
+            </div>
+            <div class="overview-card p-6 flex flex-col gap-5 place-items-stretch" style="width: 350px" v-if="canReadAuditLog && auditLogAvailable">
+              <div class="text-naturals-N14 text-sm">Tools</div>
+              <t-button type="primary" icon="document" iconPosition="left" @click="() => downloadAuditLog()">
+                Get audit logs</t-button>
             </div>
           </div>
         </div>
@@ -144,16 +149,16 @@ import {
   MachineStatusMetricsType,
   RoleNone,
   SysVersionID,
-  SysVersionType,
+  SysVersionType
 } from "@/api/resources";
-import { computed, ref } from "vue";
+import { computed, onBeforeMount, ref } from "vue";
 import { copyText } from "vue3-clipboard";
 import { Runtime } from "@/api/common/omni.pb";
 
 import { Resource } from "@/api/grpc";
 import { itemID } from "@/api/watch";
 import { MachineStatusMetricsSpec } from "@/api/omni/specs/omni.pb";
-import { downloadOmniconfig, downloadTalosconfig } from "@/methods";
+import { downloadOmniconfig, downloadTalosconfig, downloadAuditLog } from "@/methods";
 
 import OverviewCircleChartItem from "@/views/cluster/Overview/components/OverviewCircleChart/OverviewCircleChartItem.vue";
 import TButton from "@/components/common/Button/TButton.vue";
@@ -161,8 +166,9 @@ import TIcon from "@/components/common/Icon/TIcon.vue";
 import ClusterStatus from "@/views/omni/Clusters/ClusterStatus.vue";
 import Watch from "@/components/common/Watch/Watch.vue";
 import PageHeader from "@/components/common/PageHeader.vue";
-import { canCreateClusters, canReadClusters, currentUser } from "@/methods/auth";
+import { canCreateClusters, canReadAuditLog, canReadClusters, currentUser } from "@/methods/auth";
 import { ConnectionParamsSpec } from "@/api/omni/specs/siderolink.pb";
+import { auditLogEnabled } from "@/methods/features";
 
 const hasRoleNone = computed(() => {
   const role = currentUser.value?.spec?.role
@@ -269,6 +275,12 @@ url: "${talosLoggingKernel}"
 
   document.body.removeChild(element);
 };
+
+const auditLogAvailable = ref(false);
+
+onBeforeMount(async () => {
+  auditLogAvailable.value = await auditLogEnabled();
+})
 </script>
 
 <style scoped>

@@ -249,7 +249,7 @@ func (ctrl *MachineStatusController) reconcileRunning(ctx context.Context, r con
 
 		spec.Connected = connected
 
-		helpers.CopyLabels(machine, m, omni.LabelMachineRequest)
+		helpers.CopyLabels(machine, m, omni.LabelMachineRequest, omni.LabelMachineRequestSet, omni.LabelNoManualAllocation)
 
 		if connected {
 			m.Metadata().Labels().Set(omni.MachineStatusLabelConnected, "")
@@ -350,6 +350,10 @@ func (ctrl *MachineStatusController) handleNotification(ctx context.Context, r c
 			spec.Network.NetworkLinks = event.NetworkLinks
 		}
 
+		if event.Diagnostics != nil {
+			spec.Diagnostics = event.Diagnostics
+		}
+
 		if spec.Hardware == nil {
 			spec.Hardware = &specs.MachineStatusSpec_HardwareStatus{}
 		}
@@ -404,15 +408,15 @@ func (ctrl *MachineStatusController) handleNotification(ctx context.Context, r c
 			spec.Schematic.Extensions = event.Schematic.Extensions
 			spec.Schematic.Invalid = event.Schematic.Invalid
 			spec.Schematic.KernelArgs = event.Schematic.KernelArgs
-			spec.Schematic.MetaValues = xslices.Map(event.Schematic.MetaValues, func(value schematic.MetaValue) *specs.MachineStatusSpec_Schematic_MetaValue {
-				return &specs.MachineStatusSpec_Schematic_MetaValue{
+			spec.Schematic.MetaValues = xslices.Map(event.Schematic.MetaValues, func(value schematic.MetaValue) *specs.MetaValue {
+				return &specs.MetaValue{
 					Key:   uint32(value.Key),
 					Value: value.Value,
 				}
 			})
 
 			if event.Schematic.Overlay.Name != "" {
-				spec.Schematic.Overlay = &specs.MachineStatusSpec_Schematic_Overlay{
+				spec.Schematic.Overlay = &specs.Overlay{
 					Name:  event.Schematic.Overlay.Name,
 					Image: event.Schematic.Overlay.Image,
 				}
@@ -536,6 +540,8 @@ func (ctrl *MachineStatusController) setClusterRelation(in inputs, machineStatus
 		machineStatus.Metadata().Labels().Set(omni.MachineStatusLabelAvailable, "")
 
 		machineStatus.Metadata().Labels().Delete(omni.LabelCluster)
+		machineStatus.Metadata().Labels().Delete(omni.LabelControlPlaneRole)
+		machineStatus.Metadata().Labels().Delete(omni.LabelWorkerRole)
 
 		return nil
 	}
@@ -557,8 +563,12 @@ func (ctrl *MachineStatusController) setClusterRelation(in inputs, machineStatus
 	switch {
 	case controlPlane:
 		machineStatus.TypedSpec().Value.Role = specs.MachineStatusSpec_CONTROL_PLANE
+		machineStatus.Metadata().Labels().Set(omni.LabelControlPlaneRole, "")
+		machineStatus.Metadata().Labels().Delete(omni.LabelWorkerRole)
 	case worker:
 		machineStatus.TypedSpec().Value.Role = specs.MachineStatusSpec_WORKER
+		machineStatus.Metadata().Labels().Set(omni.LabelWorkerRole, "")
+		machineStatus.Metadata().Labels().Delete(omni.LabelControlPlaneRole)
 	default:
 		return fmt.Errorf("malformed ClusterMachine resource: no %q or %q label, role unknown", omni.LabelControlPlaneRole, omni.LabelWorkerRole)
 	}

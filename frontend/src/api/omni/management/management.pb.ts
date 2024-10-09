@@ -16,6 +16,12 @@ export enum KubernetesSyncManifestResponseResponseType {
   ROLLOUT = 2,
 }
 
+export enum CreateSchematicRequestSiderolinkGRPCTunnelMode {
+  AUTO = 0,
+  DISABLED = 1,
+  ENABLED = 2,
+}
+
 export type KubeconfigResponse = {
   kubeconfig?: Uint8Array
 }
@@ -120,6 +126,7 @@ export type CreateSchematicRequest = {
   talos_version?: string
   media_id?: string
   secure_boot?: boolean
+  siderolink_grpc_tunnel_mode?: CreateSchematicRequestSiderolinkGRPCTunnelMode
 }
 
 export type CreateSchematicResponse = {
@@ -142,6 +149,11 @@ export type GetSupportBundleResponseProgress = {
 export type GetSupportBundleResponse = {
   progress?: GetSupportBundleResponseProgress
   bundle_data?: Uint8Array
+}
+
+export type ReadAuditLogRequest = {
+  start_time?: string
+  end_time?: string
 }
 
 export type ReadAuditLogResponse = {
@@ -188,7 +200,7 @@ export class ManagementService {
   static GetSupportBundle(req: GetSupportBundleRequest, entityNotifier?: fm.NotifyStreamEntityArrival<GetSupportBundleResponse>, ...options: fm.fetchOption[]): Promise<void> {
     return fm.fetchStreamingRequest<GetSupportBundleRequest, GetSupportBundleResponse>("POST", `/management.ManagementService/GetSupportBundle`, req, entityNotifier, ...options)
   }
-  static ReadAuditLog(req: GoogleProtobufEmpty.Empty, entityNotifier?: fm.NotifyStreamEntityArrival<ReadAuditLogResponse>, ...options: fm.fetchOption[]): Promise<void> {
-    return fm.fetchStreamingRequest<GoogleProtobufEmpty.Empty, ReadAuditLogResponse>("POST", `/management.ManagementService/ReadAuditLog`, req, entityNotifier, ...options)
+  static ReadAuditLog(req: ReadAuditLogRequest, entityNotifier?: fm.NotifyStreamEntityArrival<ReadAuditLogResponse>, ...options: fm.fetchOption[]): Promise<void> {
+    return fm.fetchStreamingRequest<ReadAuditLogRequest, ReadAuditLogResponse>("POST", `/management.ManagementService/ReadAuditLog`, req, entityNotifier, ...options)
   }
 }

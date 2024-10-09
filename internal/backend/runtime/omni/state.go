@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta"
@@ -29,9 +30,9 @@ import (
 	"github.com/siderolabs/omni/internal/backend/logging"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/audit"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/audit/hooks"
-	"github.com/siderolabs/omni/internal/backend/runtime/omni/cloudprovider"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/controllers/omni/etcdbackup/store"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/external"
+	"github.com/siderolabs/omni/internal/backend/runtime/omni/infraprovider"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/migration"
 	"github.com/siderolabs/omni/internal/backend/runtime/omni/virtual"
 	"github.com/siderolabs/omni/internal/pkg/config"
@@ -89,7 +90,7 @@ func newNamespacedState(params *config.Params, primaryStorageCoreState state.Cor
 		return nil, nil, fmt.Errorf("failed to create etcd backup store: %w", err)
 	}
 
-	cloudProviderState := cloudprovider.NewState(primaryStorageCoreState, logger.With(logging.Component("cloudprovider_state")))
+	infraProviderState := infraprovider.NewState(primaryStorageCoreState, logger.With(logging.Component("infraprovider_state")))
 
 	namespacedState := namespaced.NewState(func(ns resource.Namespace) state.CoreState {
 		switch ns {
@@ -105,11 +106,11 @@ func newNamespacedState(params *config.Params, primaryStorageCoreState state.Cor
 				StoreFactory: storeFactory,
 				Logger:       logger,
 			}
-		case resources.CloudProviderNamespace:
-			return cloudProviderState
+		case resources.InfraProviderNamespace:
+			return infraProviderState
 		default:
-			if strings.HasPrefix(ns, resources.CloudProviderSpecificNamespacePrefix) {
-				return cloudProviderState
+			if strings.HasPrefix(ns, resources.InfraProviderSpecificNamespacePrefix) {
+				return infraProviderState
 			}
 
 			return primaryStorageCoreState
@@ -210,12 +211,12 @@ type AuditWrap struct {
 }
 
 // ReadAuditLog reads the audit log file by file, oldest to newest.
-func (w *AuditWrap) ReadAuditLog() (io.ReadCloser, error) {
+func (w *AuditWrap) ReadAuditLog(start, end time.Time) (io.ReadCloser, error) {
 	if w.log == nil {
 		return nil, errors.New("audit log is disabled")
 	}
 
-	return w.log.ReadAuditLog()
+	return w.log.ReadAuditLog(start, end)
 }
 
 // RunCleanup runs wrapped [audit.Log.RunCleanup] if the audit log is enabled. Otherwise, blocks until context is

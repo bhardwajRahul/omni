@@ -20,7 +20,7 @@ echo "127.0.0.1 my-instance.localhost" | tee -a /etc/hosts
 
 # Settings.
 
-TALOS_VERSION=1.7.4
+TALOS_VERSION=1.7.6
 ARTIFACTS=_out
 JOIN_TOKEN=testonly
 RUN_DIR=$(pwd)
@@ -120,6 +120,7 @@ nice -n 10 ${ARTIFACTS}/omni-linux-amd64 \
     --cert hack/certs/localhost.pem \
     --etcd-embedded-unsafe-fsync=true \
     --etcd-backup-s3 \
+    --audit-log-dir /tmp/omni-data/audit-log \
     "${REGISTRY_MIRROR_FLAGS[@]}" \
     &
 
@@ -128,9 +129,7 @@ KERNEL_ARGS="siderolink.api=grpc://$LOCAL_IP:8090?jointoken=${JOIN_TOKEN} talos.
 if [[ "${RUN_TALEMU_TESTS:-false}" == "true" ]]; then
   PROMETHEUS_CONTAINER=$(docker run --network host -p "9090:9090" -v "$(pwd)/hack/compose/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml" -it --rm -d prom/prometheus)
 
-  TALEMU_CONTAINER=$(docker run --network host --cap-add=NET_ADMIN -it --rm -d ghcr.io/siderolabs/talemu:latest --kernel-args="${KERNEL_ARGS}" --machines=30)
-
-  sleep 10
+  TALEMU_CONTAINER=$(docker run --network host --cap-add=NET_ADMIN -it --rm -d ghcr.io/siderolabs/talemu-infra-provider:latest --create-service-account --omni-api-endpoint=https://$LOCAL_IP:8099)
 
   SSL_CERT_DIR=hack/certs:/etc/ssl/certs \
   ${ARTIFACTS}/integration-test-linux-amd64 \
@@ -138,7 +137,7 @@ if [[ "${RUN_TALEMU_TESTS:-false}" == "true" ]]; then
       --talos-version=${TALOS_VERSION} \
       --omnictl-path=${ARTIFACTS}/omnictl-linux-amd64 \
       --expected-machines=30 \
-      --cleanup-links \
+      --provision-machines=30 \
       --run-stats-check \
       -t 4m \
       -p 10 \

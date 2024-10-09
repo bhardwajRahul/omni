@@ -86,8 +86,8 @@ func NewRouter(
 	verifier grpc.UnaryServerInterceptor,
 ) (*Router, error) {
 	omniConn, err := grpc.NewClient(transport.Address(),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return transport.Dial()
+		grpc.WithContextDialer(func(dctx context.Context, _ string) (net.Conn, error) {
+			return transport.DialContext(dctx)
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(
@@ -186,11 +186,11 @@ func (r *Router) getTalosBackend(ctx context.Context, md metadata.MD) ([]proxy.B
 	}
 
 	ch := r.sf.DoChan(id, func() (any, error) {
-		ctx = actor.MarkContextAsInternalActor(ctx)
+		innerCtx := actor.MarkContextAsInternalActor(ctx)
 
 		r.metricCacheMisses.Inc()
 
-		conn, err := r.getConn(ctx, clusterName)
+		conn, err := r.getConn(innerCtx, clusterName)
 		if err != nil {
 			return nil, err
 		}

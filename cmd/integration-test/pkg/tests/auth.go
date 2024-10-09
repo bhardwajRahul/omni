@@ -48,7 +48,7 @@ import (
 	"github.com/siderolabs/omni/client/pkg/constants"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
 	authres "github.com/siderolabs/omni/client/pkg/omni/resources/auth"
-	"github.com/siderolabs/omni/client/pkg/omni/resources/cloud"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/k8s"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/oidc"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
@@ -486,15 +486,12 @@ func AssertAPIAuthz(rootCtx context.Context, rootCli *client.Client, clientConfi
 			},
 			// Audit log
 			{
-				namePrefix:   "audit-logs",
-				requiredRole: role.Admin,
-				assertSuccess: func(t *testing.T, err error) {
-					// TODO: replace this with `assertSuccess` once the audit log is enabled by default
-					assert.ErrorContains(t, err, "audit log is disabled")
-				},
+				namePrefix:    "audit-logs",
+				requiredRole:  role.Admin,
+				assertSuccess: assertSuccess,
 				assertFailure: assertMissingRoleFailure,
 				fn: func(ctx context.Context, cli *client.Client) error {
-					for _, err := range cli.Management().ReadAuditLog(ctx) {
+					for _, err := range cli.Management().ReadAuditLog(ctx, "", "") {
 						if err != nil {
 							return err
 						}
@@ -592,9 +589,9 @@ type resourceAuthzTestCase struct {
 //
 //nolint:gocognit,gocyclo,cyclop,maintidx
 func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, clientConfig *clientconfig.ClientConfig) TestFunc {
-	return func(t *testing.T) {
-		rootCtx = metadata.NewOutgoingContext(rootCtx, metadata.Pairs(grpcutil.LogLevelOverrideMetadataKey, zapcore.PanicLevel.String()))
+	rootCtx = metadata.NewOutgoingContext(rootCtx, metadata.Pairs(grpcutil.LogLevelOverrideMetadataKey, zapcore.PanicLevel.String()))
 
+	return func(t *testing.T) {
 		allRoles := []role.Role{role.None, role.Reader, role.Operator, role.Admin}
 		allVerbs := []state.Verb{state.Get, state.List, state.Create, state.Update, state.Destroy}
 
@@ -614,6 +611,7 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 		machineSet.Metadata().Labels().Set(omni.LabelCluster, cluster.Metadata().ID())
 		machineSetNode := omni.NewMachineSetNode(resources.DefaultNamespace, uuid.New().String(), machineSet)
 		machineClass := omni.NewMachineClass(resources.DefaultNamespace, uuid.New().String())
+		machineRequestSet := omni.NewMachineRequestSet(resources.DefaultNamespace, uuid.New().String())
 
 		extensionsConfiguration := omni.NewExtensionsConfiguration(resources.DefaultNamespace, uuid.New().String())
 		extensionsConfiguration.Metadata().Labels().Set(omni.LabelCluster, cluster.Metadata().ID())
@@ -667,6 +665,10 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 			},
 			{
 				resource:       machineClass,
+				allowedVerbSet: allVerbsSet,
+			},
+			{
+				resource:       machineRequestSet,
 				allowedVerbSet: allVerbsSet,
 			},
 			{
@@ -755,6 +757,10 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 				allowedVerbSet: readOnlyVerbSet,
 			},
 			{
+				resource:       omni.NewClusterDiagnostics(resources.DefaultNamespace, uuid.New().String()),
+				allowedVerbSet: readOnlyVerbSet,
+			},
+			{
 				resource:       omni.NewClusterUUID(uuid.New().String()),
 				allowedVerbSet: readOnlyVerbSet,
 			},
@@ -833,14 +839,6 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 			},
 			{
 				resource:       omni.NewMachineConfigGenOptions(resources.DefaultNamespace, uuid.New().String()),
-				allowedVerbSet: readOnlyVerbSet,
-			},
-			{
-				resource:       omni.NewMachineClassStatus(resources.DefaultNamespace, uuid.New().String()),
-				allowedVerbSet: readOnlyVerbSet,
-			},
-			{
-				resource:       omni.NewMachineSetRequiredMachines(resources.DefaultNamespace, uuid.New().String()),
 				allowedVerbSet: readOnlyVerbSet,
 			},
 			{
@@ -959,6 +957,10 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 				resource:       system.NewResourceLabels[*omni.MachineStatus](uuid.New().String()),
 				allowedVerbSet: readOnlyVerbSet,
 			},
+			{
+				resource:       omni.NewMachineRequestSetStatus(resources.DefaultNamespace, uuid.New().String()),
+				allowedVerbSet: allVerbsSet,
+			},
 		}...)
 
 		// no access resources
@@ -1011,6 +1013,9 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 			{
 				resource: omni.NewBackupData(uuid.New().String()),
 			},
+			{
+				resource: omni.NewMachineRequestSetPressure(resources.DefaultNamespace, uuid.New().String()),
+			},
 		}...)
 
 		// custom resources
@@ -1030,9 +1035,10 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 		delete(untestedResourceTypes, k8s.KubernetesResourceType)
 		delete(untestedResourceTypes, siderolink.DeprecatedLinkCounterType)
 
-		// cloud provider resources have their custom authz logic, they are unit-tested in their package
-		delete(untestedResourceTypes, cloud.MachineRequestType)
-		delete(untestedResourceTypes, cloud.MachineRequestStatusType)
+		// infra provider resources have their custom authz logic, they are unit-tested in their package
+		delete(untestedResourceTypes, infra.MachineRequestType)
+		delete(untestedResourceTypes, infra.MachineRequestStatusType)
+		delete(untestedResourceTypes, infra.InfraProviderStatusType)
 
 		for _, tc := range testCases {
 			for _, testVerb := range allVerbs {
@@ -1145,9 +1151,9 @@ func AssertResourceAuthz(rootCtx context.Context, rootCli *client.Client, client
 
 // AssertResourceAuthzWithACL tests the authorization checks of with ACLs.
 func AssertResourceAuthzWithACL(ctx context.Context, rootCli *client.Client, clientConfig *clientconfig.ClientConfig) TestFunc {
-	return func(t *testing.T) {
-		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(grpcutil.LogLevelOverrideMetadataKey, zapcore.PanicLevel.String()))
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(grpcutil.LogLevelOverrideMetadataKey, zapcore.PanicLevel.String()))
 
+	return func(t *testing.T) {
 		rootState := rootCli.Omni().State()
 
 		testID := "acl-test-" + uuid.NewString()
@@ -1214,13 +1220,13 @@ func AssertResourceAuthzWithACL(ctx context.Context, rootCli *client.Client, cli
 		clusterAuthorized.TypedSpec().Value.KubernetesVersion = "1.27.3"
 
 		err = userState.Create(ctx, clusterAuthorized)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		t.Cleanup(func() { destroy(ctx, t, rootCli, clusterAuthorized.Metadata()) })
 
 		// try to get the unauthorized cluster using the user client - should work, as the user has the Reader role
 		_, err = userState.Get(ctx, clusterUnauthorized.Metadata())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		//  try to modify the unauthorized cluster using the user client
 		clusterUnauthorized.TypedSpec().Value.TalosVersion = "1.4.5"
@@ -1230,7 +1236,7 @@ func AssertResourceAuthzWithACL(ctx context.Context, rootCli *client.Client, cli
 
 		// try to get the authorized cluster using the user client
 		_, err = userState.Get(ctx, clusterAuthorized.Metadata())
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		// test the logic for a config patch without any cluster association
 		configPatchUnauthorized := omni.NewConfigPatch(resources.DefaultNamespace, "unauthorized-"+testID)
@@ -1242,10 +1248,11 @@ func AssertResourceAuthzWithACL(ctx context.Context, rootCli *client.Client, cli
 		configPatchAuthorized := omni.NewConfigPatch(resources.DefaultNamespace, "authorized"+testID)
 		configPatchAuthorized.Metadata().Labels().Set(omni.LabelCluster, clusterAuthorized.Metadata().ID())
 
-		configPatchAuthorized.TypedSpec().Value.Data = "debug: true"
+		err = configPatchAuthorized.TypedSpec().Value.SetUncompressedData([]byte("debug: true"))
+		require.NoError(t, err)
 
 		err = userState.Create(ctx, configPatchAuthorized)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		t.Cleanup(func() { destroy(ctx, t, rootCli, configPatchAuthorized.Metadata()) })
 	}

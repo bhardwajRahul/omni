@@ -12,7 +12,10 @@
   "dependencies": {
     "@auth0/auth0-vue": "^2.0.0",
     "@headlessui/vue": "^1.6.5",
+    "@jsonforms/vue": "^3.4.0",
+    "@jsonforms/vue-vanilla": "^3.4.0",
     "@kubernetes/client-node": "^0.21.0",
+    "apexcharts": "3.45.2",
     "click-outside-vue3": "^4.0.1",
     "core-js": "^3.23.3",
     "js-yaml": "^4.1.0",
@@ -33,6 +36,8 @@
   },
   "devDependencies": {
     "@heroicons/vue": "^2.1.3",
+    "@types/luxon": "^3.4.2",
+    "@types/pluralize": "^0.0.33",
     "@vitejs/plugin-vue": "^5.0.4",
     "autoprefixer": "^10.4.19",
     "eslint-plugin-typescript": "^0.14.0",

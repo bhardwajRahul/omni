@@ -125,12 +125,19 @@ message KubernetesSyncManifestResponse {
 }
 
 message CreateSchematicRequest {
+  enum SiderolinkGRPCTunnelMode {
+    AUTO = 0;
+    DISABLED = 1;
+    ENABLED = 2;
+  }
+
   repeated string extensions = 1;
   repeated string extra_kernel_args = 2;
   map<uint32, string> meta_values = 3;
   string talos_version = 4;
   string media_id = 5;
   bool secure_boot = 6;
+  SiderolinkGRPCTunnelMode siderolink_grpc_tunnel_mode = 7;
 }
 
 message CreateSchematicResponse {
@@ -155,6 +162,12 @@ message GetSupportBundleResponse {
   bytes bundle_data = 2;
 }
 
+// specifies start and end time (inclusive range) in <year>-<month>-<day> format. We pass time as string to avoid timezone issues.
+message ReadAuditLogRequest {
+  string start_time = 1;
+  string end_time = 2;
+}
+
 message ReadAuditLogResponse {
   bytes audit_log = 1;
 }
@@ -173,5 +186,5 @@ service ManagementService {
   rpc KubernetesSyncManifests(KubernetesSyncManifestRequest) returns (stream KubernetesSyncManifestResponse);
   rpc CreateSchematic(CreateSchematicRequest) returns (CreateSchematicResponse);
   rpc GetSupportBundle(GetSupportBundleRequest) returns (stream GetSupportBundleResponse);
-  rpc ReadAuditLog(google.protobuf.Empty) returns (stream ReadAuditLogResponse);
+  rpc ReadAuditLog(ReadAuditLogRequest) returns (stream ReadAuditLogResponse);
 }

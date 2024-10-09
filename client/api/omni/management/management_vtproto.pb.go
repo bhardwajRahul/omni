@@ -408,6 +408,7 @@ func (m *CreateSchematicRequest) CloneVT() *CreateSchematicRequest {
 	r.TalosVersion = m.TalosVersion
 	r.MediaId = m.MediaId
 	r.SecureBoot = m.SecureBoot
+	r.SiderolinkGrpcTunnelMode = m.SiderolinkGrpcTunnelMode
 	if rhs := m.Extensions; rhs != nil {
 		tmpContainer := make([]string, len(rhs))
 		copy(tmpContainer, rhs)
@@ -511,6 +512,24 @@ func (m *GetSupportBundleResponse) CloneVT() *GetSupportBundleResponse {
 }
 
 func (m *GetSupportBundleResponse) CloneMessageVT() proto.Message {
+	return m.CloneVT()
+}
+
+func (m *ReadAuditLogRequest) CloneVT() *ReadAuditLogRequest {
+	if m == nil {
+		return (*ReadAuditLogRequest)(nil)
+	}
+	r := new(ReadAuditLogRequest)
+	r.StartTime = m.StartTime
+	r.EndTime = m.EndTime
+	if len(m.unknownFields) > 0 {
+		r.unknownFields = make([]byte, len(m.unknownFields))
+		copy(r.unknownFields, m.unknownFields)
+	}
+	return r
+}
+
+func (m *ReadAuditLogRequest) CloneMessageVT() proto.Message {
 	return m.CloneVT()
 }
 
@@ -1038,6 +1057,9 @@ func (this *CreateSchematicRequest) EqualVT(that *CreateSchematicRequest) bool {
 	if this.SecureBoot != that.SecureBoot {
 		return false
 	}
+	if this.SiderolinkGrpcTunnelMode != that.SiderolinkGrpcTunnelMode {
+		return false
+	}
 	return string(this.unknownFields) == string(that.unknownFields)
 }
 
@@ -1137,6 +1159,28 @@ func (this *GetSupportBundleResponse) EqualVT(that *GetSupportBundleResponse) bo
 
 func (this *GetSupportBundleResponse) EqualMessageVT(thatMsg proto.Message) bool {
 	that, ok := thatMsg.(*GetSupportBundleResponse)
+	if !ok {
+		return false
+	}
+	return this.EqualVT(that)
+}
+func (this *ReadAuditLogRequest) EqualVT(that *ReadAuditLogRequest) bool {
+	if this == that {
+		return true
+	} else if this == nil || that == nil {
+		return false
+	}
+	if this.StartTime != that.StartTime {
+		return false
+	}
+	if this.EndTime != that.EndTime {
+		return false
+	}
+	return string(this.unknownFields) == string(that.unknownFields)
+}
+
+func (this *ReadAuditLogRequest) EqualMessageVT(thatMsg proto.Message) bool {
+	that, ok := thatMsg.(*ReadAuditLogRequest)
 	if !ok {
 		return false
 	}
@@ -2139,6 +2183,11 @@ func (m *CreateSchematicRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.SiderolinkGrpcTunnelMode != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.SiderolinkGrpcTunnelMode))
+		i--
+		dAtA[i] = 0x38
+	}
 	if m.SecureBoot {
 		i--
 		if m.SecureBoot {
@@ -2396,6 +2445,53 @@ func (m *GetSupportBundleResponse) MarshalToSizedBufferVT(dAtA []byte) (int, err
 		}
 		i -= size
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ReadAuditLogRequest) MarshalVT() (dAtA []byte, err error) {
+	if m == nil {
+		return nil, nil
+	}
+	size := m.SizeVT()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBufferVT(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ReadAuditLogRequest) MarshalToVT(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVT(dAtA[:size])
+}
+
+func (m *ReadAuditLogRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
+	if m == nil {
+		return 0, nil
+	}
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.unknownFields != nil {
+		i -= len(m.unknownFields)
+		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.EndTime) > 0 {
+		i -= len(m.EndTime)
+		copy(dAtA[i:], m.EndTime)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.EndTime)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.StartTime) > 0 {
+		i -= len(m.StartTime)
+		copy(dAtA[i:], m.StartTime)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.StartTime)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -2824,6 +2920,9 @@ func (m *CreateSchematicRequest) SizeVT() (n int) {
 	if m.SecureBoot {
 		n += 2
 	}
+	if m.SiderolinkGrpcTunnelMode != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.SiderolinkGrpcTunnelMode))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -2899,6 +2998,24 @@ func (m *GetSupportBundleResponse) SizeVT() (n int) {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	l = len(m.BundleData)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	n += len(m.unknownFields)
+	return n
+}
+
+func (m *ReadAuditLogRequest) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.StartTime)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	l = len(m.EndTime)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
@@ -5345,6 +5462,25 @@ func (m *CreateSchematicRequest) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.SecureBoot = bool(v != 0)
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SiderolinkGrpcTunnelMode", wireType)
+			}
+			m.SiderolinkGrpcTunnelMode = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SiderolinkGrpcTunnelMode |= CreateSchematicRequest_SiderolinkGRPCTunnelMode(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -5848,6 +5984,121 @@ func (m *GetSupportBundleResponse) UnmarshalVT(dAtA []byte) error {
 			if m.BundleData == nil {
 				m.BundleData = []byte{}
 			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.unknownFields = append(m.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ReadAuditLogRequest) UnmarshalVT(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return protohelpers.ErrIntOverflow
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ReadAuditLogRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ReadAuditLogRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTime", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.StartTime = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EndTime", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EndTime = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

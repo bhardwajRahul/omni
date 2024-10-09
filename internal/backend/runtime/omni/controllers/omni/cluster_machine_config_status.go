@@ -54,7 +54,7 @@ type ClusterMachineConfigStatusController = qtransform.QController[*omni.Cluster
 
 // NewClusterMachineConfigStatusController initializes ClusterMachineConfigStatusController.
 //
-//nolint:gocognit,gocyclo,cyclop
+//nolint:gocognit,gocyclo,cyclop,maintidx
 func NewClusterMachineConfigStatusController() *ClusterMachineConfigStatusController {
 	ongoingResets := &ongoingResets{
 		statuses: map[string]*resetStatus{},
@@ -138,9 +138,9 @@ func NewClusterMachineConfigStatusController() *ClusterMachineConfigStatusContro
 
 				// don't run the upgrade check if the running version and expected versions match
 				if versionMismatch && installImage.TalosVersion != "" {
-					inSync, err := handler.syncInstallImageAndSchematic(ctx, configStatus, machineStatus, machineConfig, statusSnapshot, installImage)
-					if err != nil {
-						return err
+					inSync, syncErr := handler.syncInstallImageAndSchematic(ctx, configStatus, machineStatus, machineConfig, statusSnapshot, installImage)
+					if syncErr != nil {
+						return syncErr
 					}
 
 					if !inSync {
@@ -152,7 +152,21 @@ func NewClusterMachineConfigStatusController() *ClusterMachineConfigStatusContro
 					}
 				}
 
-				shaSum := sha256.Sum256(machineConfig.TypedSpec().Value.Data)
+				stage := statusSnapshot.TypedSpec().Value.GetMachineStatus().GetStage()
+				if stage == machineapi.MachineStatusEvent_BOOTING || stage == machineapi.MachineStatusEvent_RUNNING {
+					if err = handler.deleteUpgradeMetaKey(ctx, machineStatus, machineConfig); err != nil {
+						return err
+					}
+				}
+
+				buffer, err := machineConfig.TypedSpec().Value.GetUncompressedData()
+				if err != nil {
+					return err
+				}
+
+				defer buffer.Free()
+
+				shaSum := sha256.Sum256(buffer.Data())
 				shaSumString := hex.EncodeToString(shaSum[:])
 
 				if configStatus.TypedSpec().Value.ClusterMachineConfigSha256 == shaSumString {
@@ -456,8 +470,15 @@ func (h *clusterMachineConfigStatusControllerHandler) applyConfig(inputCtx conte
 	ctx, applyCancel := context.WithTimeout(inputCtx, time.Minute)
 	defer applyCancel()
 
+	data, err := machineConfig.TypedSpec().Value.GetUncompressedData()
+	if err != nil {
+		return err
+	}
+
+	defer data.Free()
+
 	resp, err := c.ApplyConfiguration(ctx, &machineapi.ApplyConfigurationRequest{
-		Data: machineConfig.TypedSpec().Value.Data,
+		Data: data.Data(),
 		Mode: machineapi.ApplyConfigurationRequest_AUTO,
 	})
 	if err != nil {
@@ -742,6 +763,29 @@ func (h *clusterMachineConfigStatusControllerHandler) getClient(
 	}
 
 	return result, nil
+}
+
+func (h *clusterMachineConfigStatusControllerHandler) deleteUpgradeMetaKey(ctx context.Context, machineStatus *omni.MachineStatus, machineConfig *omni.ClusterMachineConfig) error {
+	client, err := h.getClient(ctx, false, machineStatus, machineConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get client for machine %q: %w", machineConfig.Metadata().ID(), err)
+	}
+
+	defer logClose(client, h.logger, fmt.Sprintf("machine %q", machineConfig.Metadata().ID()))
+
+	if err = client.MetaDelete(ctx, meta.Upgrade); err != nil {
+		if status.Code(err) == codes.NotFound {
+			h.logger.Debug("upgrade meta key not found", zap.String("machine", machineConfig.Metadata().ID()))
+
+			return nil
+		}
+
+		return err
+	}
+
+	h.logger.Info("deleted upgrade meta key", zap.String("machine", machineConfig.Metadata().ID()))
+
+	return nil
 }
 
 var insecureTLSConfig = &tls.Config{

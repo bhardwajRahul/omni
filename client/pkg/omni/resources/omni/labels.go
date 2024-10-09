@@ -54,8 +54,8 @@ const (
 	// tsgen:LabelExposedServiceAlias
 	LabelExposedServiceAlias = SystemLabelPrefix + "exposed-service-alias"
 
-	// LabelCloudProviderID is the cloud provider ID for the resources managed by cloud providers, e.g., cloud.MachineRequest, cloud.MachineRequestStatus.
-	LabelCloudProviderID = SystemLabelPrefix + "cloud-provider-id"
+	// LabelInfraProviderID is the infra provider ID for the resources managed by infra providers, e.g., infra.MachineRequest, infra.MachineRequestStatus.
+	LabelInfraProviderID = SystemLabelPrefix + "infra-provider-id"
 
 	// LabelMachineClassName is the name of the machine class.
 	LabelMachineClassName = SystemLabelPrefix + "machine-class-name"
@@ -63,6 +63,19 @@ const (
 	// LabelMachineRequest is the machine request label.
 	// tsgen:LabelMachineRequest
 	LabelMachineRequest = SystemLabelPrefix + "machine-request"
+
+	// LabelMachineRequestSet is the machine request set label.
+	// tsgen:LabelMachineRequestSet
+	LabelMachineRequestSet = SystemLabelPrefix + "machine-request-set"
+
+	// LabelMachineInfraID is the ID of the machine specific to an infra provider.
+	LabelMachineInfraID = SystemLabelPrefix + "infra-id"
+
+	// LabelNoManualAllocation is set on the machines which were automatically created by the infra provisioner for a
+	// specific machine request set.
+	// Setting this label will make MachineSetNode controller ignore such machines for the manual label selectors.
+	// tsgen:LabelNoManualAllocation
+	LabelNoManualAllocation = SystemLabelPrefix + "no-manual-allocation"
 )
 
 const (

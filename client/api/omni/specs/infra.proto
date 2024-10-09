@@ -1,0 +1,36 @@
+syntax = "proto3";
+package specs;
+
+option go_package = "github.com/siderolabs/omni/client/api/omni/specs";
+
+import "omni/specs/omni.proto";
+
+message MachineRequestSpec {
+  string talos_version = 1;
+  specs.Overlay overlay = 2;
+  repeated string extensions = 3;
+  repeated string kernel_args = 4;
+  repeated specs.MetaValue meta_values = 5;
+  string provider_data = 6;
+  GrpcTunnelMode grpc_tunnel = 7;
+}
+
+message MachineRequestStatusSpec {
+  enum Stage {
+    UNKNOWN = 0;
+    PROVISIONING = 1;
+    PROVISIONED = 2;
+    FAILED = 3;
+  }
+
+  string id = 1;
+  Stage stage = 2;
+  string error = 3;
+}
+
+message InfraProviderStatusSpec {
+  string schema = 1;
+  string name = 2;
+  string description = 3;
+  string icon = 4;
+}

@@ -151,6 +151,10 @@ const computeState = () => {
   }
 
   for (const device of bds) {
+    if (device.readonly || device.type === "CD") {
+      continue;
+    }
+
     diskPaths.push(device.linux_name!);
   }
 
@@ -242,7 +246,7 @@ const options: Ref<PickerOption[]> = computed(() => {
       }
     }
 
-    if (ms.machineClass) {
+    if (ms.machineAllocation) {
       disabled = true;
       tooltip = `The machine class ${ms.id} is using machine class so no manual allocation is possible`
     }

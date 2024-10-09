@@ -7,6 +7,7 @@ package omni
 
 import (
 	"context"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/controller/generic"
@@ -17,9 +18,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
-	"github.com/siderolabs/omni/client/pkg/omni/resources/cloud"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/siderolink"
+	"github.com/siderolabs/omni/internal/backend/runtime/omni/controllers/helpers"
 )
 
 // MachineRequestLinkControllerName is the name of the MachineRequestLinkController.
@@ -46,8 +48,8 @@ func (ctrl *MachineRequestLinkController) Settings() controller.QSettings {
 	return controller.QSettings{
 		Inputs: []controller.Input{
 			{
-				Namespace: resources.CloudProviderNamespace,
-				Type:      cloud.MachineRequestStatusType,
+				Namespace: resources.InfraProviderNamespace,
+				Type:      infra.MachineRequestStatusType,
 				Kind:      controller.InputQPrimary,
 			},
 		},
@@ -66,7 +68,7 @@ func (ctrl *MachineRequestLinkController) MapInput(context.Context, *zap.Logger,
 func (ctrl *MachineRequestLinkController) Reconcile(ctx context.Context,
 	_ *zap.Logger, r controller.QRuntime, ptr resource.Pointer,
 ) error {
-	machineRequestStatus, err := safe.ReaderGet[*cloud.MachineRequestStatus](ctx, r, cloud.NewMachineRequestStatus(ptr.ID()).Metadata())
+	machineRequestStatus, err := safe.ReaderGet[*infra.MachineRequestStatus](ctx, r, infra.NewMachineRequestStatus(ptr.ID()).Metadata())
 	if err != nil {
 		if state.IsNotFoundError(err) {
 			return nil
@@ -80,11 +82,17 @@ func (ctrl *MachineRequestLinkController) Reconcile(ctx context.Context,
 	_, err = safe.StateUpdateWithConflicts(ctx, ctrl.state, link.Metadata(), func(r *siderolink.Link) error {
 		r.Metadata().Labels().Set(omni.LabelMachineRequest, machineRequestStatus.Metadata().ID())
 
+		helpers.CopyLabels(machineRequestStatus, r, omni.LabelMachineRequestSet)
+
 		return nil
 	})
 
 	if state.IsPhaseConflictError(err) {
 		return nil
+	}
+
+	if state.IsNotFoundError(err) {
+		return controller.NewRequeueError(err, time.Second*5)
 	}
 
 	return err

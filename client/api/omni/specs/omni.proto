@@ -7,6 +7,7 @@ import "talos/machine/machine.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
+
 // MachineSpec describes a Machine.
 message MachineSpec {
   // IP which can be used to access Talos API.
@@ -21,6 +22,16 @@ message MachineSpec {
 message SecureBootStatus {
   // Enabled is true if SecureBoot is detected to be available and enabled.
   bool enabled = 1;
+}
+
+message Overlay {
+  string name = 1;
+  string image = 2;
+}
+
+message MetaValue {
+  uint32 key = 1;
+  string value = 2;
 }
 
 // MachineStatusSpec describes state of a Machine.
@@ -71,6 +82,8 @@ message MachineStatusSpec {
       string bus_path = 10;
       // SystemDisk is the system disk flag.
       bool system_disk = 11;
+      // Readonly disk.
+      bool readonly = 12;
     }
 
     // CPU information.
@@ -132,16 +145,6 @@ message MachineStatusSpec {
   }
 
   message Schematic {
-    message Overlay {
-      string name = 1;
-      string image = 2;
-    }
-
-    message MetaValue {
-      uint32 key = 1;
-      string value = 2;
-    }
-
     // Id is the image factory schematic id used for the image generation.
     //
     // This must be be plain id computed solely from the system extensions, not including the kernel command line arguments, META content etc.
@@ -175,6 +178,12 @@ message MachineStatusSpec {
     //
     // It is used instead of Id primarily when the machine has secure boot enabled.
     string full_id = 9;
+  }
+
+  message Diagnostic {
+    string id = 1;
+    string message = 2;
+    repeated string details = 3;
   }
 
   // Talos version.
@@ -229,6 +238,8 @@ message MachineStatusSpec {
   reserved 17;
 
   SecureBootStatus secure_boot_status = 18;
+
+  repeated Diagnostic diagnostics = 19;
 }
 
 // TalosConfigSpec describes a Talos cluster config.
@@ -382,7 +393,14 @@ message ClusterMachineSpec {
 // ClusterMachineConfigPatchesSpec keeps the list of config patches to be applied on the machine.
 message ClusterMachineConfigPatchesSpec {
   // List of patches combined from all sources, as a final list of patches to apply.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
   repeated string patches = 1;
+
+  // List of patches combined from all sources, as a final list of patches to apply.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
+  repeated bytes compressed_patches = 2;
 }
 
 // ClusterMachineTalosVersionSpec describes a machine Talos version and schematic.
@@ -393,14 +411,30 @@ message ClusterMachineTalosVersionSpec {
 
 // ClusterMachineConfigSpec stores generated Talos node machine config.
 message ClusterMachineConfigSpec {
+  // Data contains the config bytes. It is only set if the config is not compressed. Otherwise, CompressedData is set instead.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
   bytes data = 1;
   string cluster_machine_version = 2;
   string generation_error = 3;
+
+  // CompressedData contains the config bytes. It is only set if the config is not compressed. Otherwise, CompressedData is set instead.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
+  bytes compressed_data = 4;
 }
 
 // ClusterMachineConfigSpec stores generated Talos node machine config.
 message RedactedClusterMachineConfigSpec {
+  // Data contains the config bytes. It is only set if the config is not compressed. Otherwise, CompressedData is set instead.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
   string data = 1;
+
+  // CompressedData contains the config bytes. It is only set if the config is not compressed. Otherwise, CompressedData is set instead.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedDataa to manage this field.
+  bytes compressed_data = 2;
 }
 
 // ClusterMachineIdentity keeps ClusterMachine related node information.
@@ -597,7 +631,15 @@ message InstallationMediaSpec {
 
 // ConfigPatchSpec represents the machine config patch.
 message ConfigPatchSpec {
+  // Data contains the config patch bytes. It is only set if the config patch is not compressed. Otherwise, CompressedData is set instead.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
   string data = 1;
+
+  // CompressedData contains the config patch bytes. It is only set if the config patch is not compressed. Otherwise, CompressedData is set instead.
+  //
+  // Deprecated: use accessor methods GetUncompressedData/SetUncompressedData to manage this field.
+  bytes compressed_data = 2;
 }
 
 // MachineSetPhaseSpec is machine set phase.
@@ -613,21 +655,48 @@ enum MachineSetPhase {
 
 // MachineSetSpec describes the cluster machine group.
 message MachineSetSpec {
-  // MachineClass defines the machine class configuration.
+  // MachineClass defines the machine class allocation mode config.
   message MachineClass {
-    enum AllocationType {
+    enum Type {
       // Static uses the count defined in the count field.
       Static = 0;
-      // Unlimited allocates all available machines from the machine class.
+      // Unlimited allocates all available machines from the machine class/request set.
       Unlimited = 1;
     }
 
-    // Name defines the machine class id to select the machines from.
+    // Name defines the machine class/machine request set id to select the machines from.
     string name = 1;
-    // MachineCount defines fixed amount of the machines to allocated from the machine class.
+    // MachineCount defines fixed amount of the machines to allocated from the machine class/request set.
     uint32 machine_count = 2;
     // AllocationType defines special constants for the amount of machines to be allocated.
-    AllocationType allocation_type = 3;
+    Type allocation_type = 3;
+  }
+
+  // MachineAllocation defines the machine automatic allocation configuration.
+  message MachineAllocation {
+    enum Type {
+      // Static uses the count defined in the count field.
+      Static = 0;
+      // Unlimited allocates all available machines from the machine class/request set.
+      Unlimited = 1;
+    }
+
+    enum Source {
+      // MachineClass allocates the machines from a machine class.
+      MachineClass = 0;
+      // MachineRequestSet allocates the machines from a machine request set.
+      MachineRequestSet = 1;
+    }
+
+    // Name defines the machine class/machine request set id to select the machines from.
+    string name = 1;
+    // MachineCount defines fixed amount of the machines to allocated from the machine class/request set.
+    uint32 machine_count = 2;
+    // AllocationType defines special constants for the amount of machines to be allocated.
+    Type allocation_type = 3;
+    // Source defines the source where to get the machines from.
+    // It can be either a machine class or a machine request set.
+    Source source = 4;
   }
 
   // BootstrapSpec defines the bootstrap spec for the control plane machine set.
@@ -664,7 +733,8 @@ message MachineSetSpec {
   UpdateStrategy update_strategy = 1;
 
   // MachineClass is the machine class to pick machines from for the machine set.
-  MachineClass machine_class = 2;
+  // Use MachineAllocation instead.
+  MachineAllocation machine_class = 2 [deprecated = true];
 
   // BootstrapSpec defines the bootstrapping spec of the machine set.
   // This field is immutable, only valid for the control plane machine set and used only once at the creation time.
@@ -679,6 +749,9 @@ message MachineSetSpec {
 
   // DeleteStrategyConfig defines the delete strategy configuration.
   UpdateStrategyConfig delete_strategy_config = 6;
+
+  // MachineAllocation rule to pick machines for the machine set.
+  MachineAllocation machine_allocation = 7;
 }
 
 // TalosUpgradeStatusSpec contains the status of the Talos upgrade process.
@@ -722,16 +795,10 @@ message MachineSetStatusSpec {
   Machines machines = 4;
   // config_hash is the combined hash of all cluster machines which are part of the machine set.
   string config_hash = 5;
-  // MachineClass is copied from the input MachineSet resource.
-  MachineSetSpec.MachineClass machine_class = 6;
+  // MachineAllocation is copied from the input MachineSet resource.
+  MachineSetSpec.MachineAllocation machine_allocation = 6;
   // LockedUpdates is the number of machines which have pending config update but are locked.
   uint32 locked_updates = 7;
-}
-
-// MachineSetRequiredMachinesSpec describes the required machines for the machine set.
-message MachineSetRequiredMachinesSpec {
-  // RequiredMachines is the number of machines required to satisfy the machine set.
-  uint32 required_additional_machines = 1;
 }
 
 // MachineSetNodeSpec is a binding between ClusterMachine and MachineSet.
@@ -901,6 +968,9 @@ message FeaturesConfigSpec {
 
   // EmbeddedDiscoveryService enables the embedded discovery service.
   bool embedded_discovery_service = 3;
+
+  // AuditLogEnabled is true when Omni is configured to collect the audit logs.
+  bool audit_log_enabled = 4;
 }
 
 message EtcdBackupSettings {
@@ -918,14 +988,29 @@ message EtcdBackupSettings {
 
 // MachineClassSpec describes an Omni MachineClass resource spec.
 message MachineClassSpec {
+  // MachineProvisionSpec describes the rules for creating and scaling the machine request set.
+  message Provision {
+    string provider_id = 1;
+
+    string talos_version = 2;
+
+    repeated string extensions = 3;
+    repeated string kernel_args = 4;
+    repeated MetaValue meta_values = 5;
+
+    // IdleMachineCount keeps the provisioned machines in the maintenance mode.
+    uint32 idle_machine_count = 6;
+
+    string provider_data = 7;
+
+    GrpcTunnelMode grpc_tunnel = 8;
+  }
+
   // MatchLabels is the list of labels to match the machine to make it part of the machine class.
   repeated string match_labels = 1;
-}
 
-// MachineClassStatusSpec describes an Omni MachineClassStatus resource spec.
-message MachineClassStatusSpec {
-  // RequiredAdditionalMachines is the number of additional machines required to satisfy the machine class.
-  uint32 required_additional_machines = 1;
+  // AutoProvision configures the machine class to automatically provision the machines.
+  Provision auto_provision = 2;
 }
 
 // MachineConfigGenOptionsSpec describes machine related config generation inputs.
@@ -1103,4 +1188,46 @@ message ClusterKubernetesNodesSpec {
 message KubernetesNodeAuditResultSpec {
   // DeletedNodes contains the list of nodes that were last removed.
   repeated string deleted_nodes = 1;
+}
+
+// MachineRequestSetSpec creates the number of machine requests.
+// Can be either connected to a machine class or be manual.
+message MachineRequestSetSpec {
+  string provider_id = 1;
+  int32 machine_count = 2;
+
+  string talos_version = 3;
+
+  reserved 4;
+  repeated string extensions = 5;
+  repeated string kernel_args = 6;
+  repeated MetaValue meta_values = 7;
+
+  string provider_data = 8;
+  GrpcTunnelMode grpc_tunnel = 9;
+}
+
+// MachineRequestSetStatusSpec describes the status of the machine request set.
+message MachineRequestSetStatusSpec {}
+
+// ClusterDiagnosticSpec describes the nodes in a cluster with diagnostics information available (indicating potential problems).
+message ClusterDiagnosticsSpec {
+  message Node {
+    string id = 1;
+    uint32 num_diagnostics = 2;
+  }
+
+  repeated Node nodes = 1;
+}
+
+// MachineClassStatusSpec describes an Omni MachineRequestSetPressure resource spec.
+message MachineRequestSetPressureSpec {
+  // RequiredMachines is the number of machines required by all machine sets which are using the request set.
+  uint32 required_machines = 1;
+}
+
+enum GrpcTunnelMode {
+  UNSET = 0;
+  ENABLED = 1;
+  DISABLED = 2;
 }
