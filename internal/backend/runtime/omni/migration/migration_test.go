@@ -1578,18 +1578,18 @@ func (suite *MigrationSuite) testDeleteDeprecatedResources(createRes func(id str
 
 func (suite *MigrationSuite) TestDeleteMachineSetRequiredMachines() {
 	suite.testDeleteDeprecatedResources(func(id string) resource.Resource {
-		return typed.NewResource[dummy, machineSetRequiredMachinesExtension](
+		return typed.NewResource[null, machineSetRequiredMachinesExtension](
 			resource.NewMetadata(resources.DefaultNamespace, migration.MachineSetRequiredMachinesType, id, resource.VersionUndefined),
-			dummy{},
+			null{},
 		)
 	}, "deleteMachineSetRequiredMachines")
 }
 
 func (suite *MigrationSuite) TestDeleteMachineClassStatuses() {
 	suite.testDeleteDeprecatedResources(func(id string) resource.Resource {
-		return typed.NewResource[dummy, machineClassStatusExtension](
+		return typed.NewResource[null, machineClassStatusExtension](
 			resource.NewMetadata(resources.DefaultNamespace, migration.MachineClassStatusType, id, resource.VersionUndefined),
-			dummy{},
+			null{},
 		)
 	}, "deleteMachineClassStatuses")
 }
@@ -2039,6 +2039,38 @@ func (suite *MigrationSuite) TestMarkVersionContract() {
 	}
 
 	suite.Require().Equal(3, updatedCount, "there should be 3 machines updated")
+}
+
+func (suite *MigrationSuite) TestDropMachineClassStatusFinalizers() {
+	ctx, cancel := context.WithTimeout(suite.T().Context(), time.Second*5)
+	defer cancel()
+
+	finalizer := "MachineClassStatusController"
+
+	c1 := omni.NewMachineClass(resources.DefaultNamespace, "c1")
+	c2 := omni.NewMachineClass(resources.DefaultNamespace, "c2")
+	c2.Metadata().SetPhase(resource.PhaseTearingDown)
+	c2.Metadata().Finalizers().Add(finalizer)
+	c2.Metadata().Finalizers().Add("some")
+
+	c3 := omni.NewMachineClass(resources.DefaultNamespace, "c3")
+	c3.Metadata().Finalizers().Add(finalizer)
+
+	suite.Require().NoError(suite.state.Create(ctx, c1))
+	suite.Require().NoError(suite.state.Create(ctx, c2))
+	suite.Require().NoError(suite.state.Create(ctx, c3))
+
+	suite.Require().NoError(suite.manager.Run(ctx, migration.WithFilter(filterWith("dropMachineClassStatusFinalizers"))))
+
+	rtestutils.AssertResources(ctx, suite.T(), suite.state, []string{c1.Metadata().ID(), c2.Metadata().ID(), c3.Metadata().ID()},
+		func(res *omni.MachineClass, assert *assert.Assertions) {
+			assert.False(res.Metadata().Finalizers().Has(finalizer))
+
+			if res.Metadata().ID() == c2.Metadata().ID() {
+				assert.False(res.Metadata().Finalizers().Empty())
+			}
+		},
+	)
 }
 
 func startMigration[
