@@ -20,12 +20,15 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 	"github.com/siderolabs/gen/pair"
+	"github.com/siderolabs/gen/xslices"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
 	"github.com/siderolabs/omni/client/api/omni/specs"
+	"github.com/siderolabs/omni/client/pkg/access"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/auth"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/registry"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/siderolink"
@@ -1734,6 +1737,93 @@ func markVersionContract(ctx context.Context, st state.State, logger *zap.Logger
 		zap.Int("num_apid_check_ext_key_usage_enabled", numApidCheckExtKeyUsageEnabled),
 		zap.Int("num_nothing_to_do", numNothingToDo),
 	)
+
+	return nil
+}
+
+func dropMachineClassStatusFinalizers(ctx context.Context, st state.State, logger *zap.Logger, _ migrationContext) error {
+	machineClasses, err := safe.StateListAll[*omni.MachineClass](ctx, st)
+	if err != nil {
+		return fmt.Errorf("failed to list cluster config versions: %w", err)
+	}
+
+	deprecatedFinalizer := "MachineClassStatusController"
+
+	for machineClass := range machineClasses.All() {
+		if !machineClass.Metadata().Finalizers().Has(deprecatedFinalizer) {
+			continue
+		}
+
+		logger.Info("remove machine class status controller finalizer from the resource", zap.String("id", machineClass.Metadata().ID()))
+
+		if err := st.RemoveFinalizer(ctx, machineClass.Metadata(), deprecatedFinalizer); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// createProviders creates infra.Provider resource for each existing infra.ProviderStatus.
+// This migration is required to avoid breaking user's providers connection which were created before 0.50.
+func createProviders(ctx context.Context, st state.State, logger *zap.Logger, _ migrationContext) error {
+	identities, err := st.List(ctx, auth.NewIdentity(resources.DefaultNamespace, "").Metadata())
+	if err != nil {
+		return err
+	}
+
+	providers, err := st.List(ctx, infra.NewProviderStatus("").Metadata())
+	if err != nil {
+		return err
+	}
+
+	existingProviders := xslices.ToSet(
+		xslices.Map(
+			xslices.Filter(
+				append(identities.Items, providers.Items...),
+				func(res resource.Resource) bool {
+					if res.Metadata().Phase() == resource.PhaseTearingDown {
+						return false
+					}
+
+					if res.Metadata().Type() == auth.IdentityType && !strings.HasPrefix(res.Metadata().ID(), access.InfraProviderServiceAccountPrefix) {
+						return false
+					}
+
+					return true
+				},
+			),
+			func(res resource.Resource) string {
+				if res.Metadata().Type() == auth.IdentityType {
+					return strings.TrimPrefix(res.Metadata().ID(), access.InfraProviderServiceAccountPrefix)
+				}
+
+				return res.Metadata().ID()
+			},
+		),
+	)
+
+	for id := range existingProviders {
+		var provider *infra.Provider
+
+		provider, err = safe.ReaderGetByID[*infra.Provider](ctx, st, id)
+		if err != nil && !state.IsNotFoundError(err) {
+			return err
+		}
+
+		if provider != nil {
+			continue
+		}
+
+		provider = infra.NewProvider(id)
+		provider.Metadata().Labels().Set(omni.LabelInfraProviderID, id)
+
+		logger.Info("register provider for the already existing provider status", zap.String("provider", id))
+
+		if err = st.Create(ctx, provider); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

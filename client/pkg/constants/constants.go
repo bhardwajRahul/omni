@@ -14,7 +14,7 @@ const SecureBoot = "secureboot"
 // DefaultTalosVersion is pre-selected in the UI, default image and used in the integration tests.
 //
 // tsgen:DefaultTalosVersion
-const DefaultTalosVersion = "1.9.5"
+const DefaultTalosVersion = "1.10.1"
 
 const (
 	// TalosRegistry is the default Talos repository URL.
@@ -80,3 +80,6 @@ const InfraProviderMetadataKey = "providerID"
 
 // CompressionThresholdBytes is the minimum marshaled size of the data to be considered for compression.
 const CompressionThresholdBytes = 2048
+
+// InfraProviderHealthCheckInterval is the default interval of the infra provider health checks.
+const InfraProviderHealthCheckInterval = 30 * time.Second

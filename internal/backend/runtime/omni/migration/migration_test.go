@@ -43,6 +43,7 @@ import (
 	"github.com/siderolabs/omni/client/pkg/constants"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
 	authres "github.com/siderolabs/omni/client/pkg/omni/resources/auth"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/siderolink"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/system"
@@ -1578,18 +1579,18 @@ func (suite *MigrationSuite) testDeleteDeprecatedResources(createRes func(id str
 
 func (suite *MigrationSuite) TestDeleteMachineSetRequiredMachines() {
 	suite.testDeleteDeprecatedResources(func(id string) resource.Resource {
-		return typed.NewResource[dummy, machineSetRequiredMachinesExtension](
+		return typed.NewResource[null, machineSetRequiredMachinesExtension](
 			resource.NewMetadata(resources.DefaultNamespace, migration.MachineSetRequiredMachinesType, id, resource.VersionUndefined),
-			dummy{},
+			null{},
 		)
 	}, "deleteMachineSetRequiredMachines")
 }
 
 func (suite *MigrationSuite) TestDeleteMachineClassStatuses() {
 	suite.testDeleteDeprecatedResources(func(id string) resource.Resource {
-		return typed.NewResource[dummy, machineClassStatusExtension](
+		return typed.NewResource[null, machineClassStatusExtension](
 			resource.NewMetadata(resources.DefaultNamespace, migration.MachineClassStatusType, id, resource.VersionUndefined),
-			dummy{},
+			null{},
 		)
 	}, "deleteMachineClassStatuses")
 }
@@ -2039,6 +2040,80 @@ func (suite *MigrationSuite) TestMarkVersionContract() {
 	}
 
 	suite.Require().Equal(3, updatedCount, "there should be 3 machines updated")
+}
+
+func (suite *MigrationSuite) TestDropMachineClassStatusFinalizers() {
+	ctx, cancel := context.WithTimeout(suite.T().Context(), time.Second*5)
+	defer cancel()
+
+	finalizer := "MachineClassStatusController"
+
+	c1 := omni.NewMachineClass(resources.DefaultNamespace, "c1")
+	c2 := omni.NewMachineClass(resources.DefaultNamespace, "c2")
+	c2.Metadata().SetPhase(resource.PhaseTearingDown)
+	c2.Metadata().Finalizers().Add(finalizer)
+	c2.Metadata().Finalizers().Add("some")
+
+	c3 := omni.NewMachineClass(resources.DefaultNamespace, "c3")
+	c3.Metadata().Finalizers().Add(finalizer)
+
+	suite.Require().NoError(suite.state.Create(ctx, c1))
+	suite.Require().NoError(suite.state.Create(ctx, c2))
+	suite.Require().NoError(suite.state.Create(ctx, c3))
+
+	suite.Require().NoError(suite.manager.Run(ctx, migration.WithFilter(filterWith("dropMachineClassStatusFinalizers"))))
+
+	rtestutils.AssertResources(ctx, suite.T(), suite.state, []string{c1.Metadata().ID(), c2.Metadata().ID(), c3.Metadata().ID()},
+		func(res *omni.MachineClass, assert *assert.Assertions) {
+			assert.False(res.Metadata().Finalizers().Has(finalizer))
+
+			if res.Metadata().ID() == c2.Metadata().ID() {
+				assert.False(res.Metadata().Finalizers().Empty())
+			}
+		},
+	)
+}
+
+func (suite *MigrationSuite) TestCreateProviders() {
+	ctx, cancel := context.WithTimeout(suite.T().Context(), 10*time.Second)
+	defer cancel()
+
+	p1status := infra.NewProviderStatus("p1")
+	p2status := infra.NewProviderStatus("p2")
+	p3status := infra.NewProviderStatus("p3")
+	p3status.Metadata().SetPhase(resource.PhaseTearingDown)
+
+	identity1 := authres.NewIdentity(resources.DefaultNamespace, "infra-provider:p1")
+	identity4 := authres.NewIdentity(resources.DefaultNamespace, "infra-provider:p4")
+	identityServiceAccount := authres.NewIdentity(resources.DefaultNamespace, "p5")
+
+	suite.Require().NoError(suite.state.Create(ctx, p1status))
+	suite.Require().NoError(suite.state.Create(ctx, p2status))
+	suite.Require().NoError(suite.state.Create(ctx, p3status))
+	suite.Require().NoError(suite.state.Create(ctx, identity1))
+	suite.Require().NoError(suite.state.Create(ctx, identity4))
+	suite.Require().NoError(suite.state.Create(ctx, identityServiceAccount))
+
+	p2 := infra.NewProvider(p2status.Metadata().ID())
+
+	suite.Require().NoError(suite.state.Create(ctx, p2))
+
+	suite.Require().NoError(suite.manager.Run(ctx, migration.WithFilter(filterWith("createProviders"))))
+
+	_, err := safe.StateGetByID[*infra.Provider](ctx, suite.state, p1status.Metadata().ID())
+	suite.Assert().NoError(err)
+
+	_, err = safe.StateGetByID[*infra.Provider](ctx, suite.state, p2status.Metadata().ID())
+	suite.Assert().NoError(err)
+
+	_, err = safe.StateGetByID[*infra.Provider](ctx, suite.state, p3status.Metadata().ID())
+	suite.Assert().True(state.IsNotFoundError(err))
+
+	_, err = safe.StateGetByID[*infra.Provider](ctx, suite.state, "p4")
+	suite.Assert().NoError(err)
+
+	_, err = safe.StateGetByID[*infra.Provider](ctx, suite.state, "p5")
+	suite.Assert().True(state.IsNotFoundError(err))
 }
 
 func startMigration[

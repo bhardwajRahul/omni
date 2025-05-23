@@ -18,13 +18,14 @@ included in the LICENSE file.
 
       <template v-if="!key">
         <div class="flex flex-col gap-2">
-          <t-input title="ID" class="flex-1 h-full" placeholder="..." v-model="name"/>
+          <t-input title="ID" class="flex-1 h-full" placeholder="..." v-model="name" v-if="!route.query.name"/>
           <t-input title="Expiration Days" type="number" :min="1" class="flex-1 h-full" v-model="expiration"/>
           <t-select-list
               class="h-full"
               title="Role"
               :values="roles"
               :defaultValue="RoleReader"
+              v-if="!route.query.role"
               @checkedValue="value => role = value"
           />
         </div>
@@ -40,8 +41,8 @@ included in the LICENSE file.
 import { Ref, ref, shallowRef } from "vue";
 import { createServiceAccount } from "@/methods/user";
 import { Notification, showError, showSuccess } from "@/notification";
-import { useRouter } from "vue-router";
-import { RoleNone, RoleReader, RoleOperator, RoleAdmin, RoleInfraProvider } from "@/api/resources";
+import { useRoute, useRouter } from "vue-router";
+import { RoleNone, RoleReader, RoleOperator, RoleAdmin } from "@/api/resources";
 
 import CloseButton from "@/views/omni/Modals/CloseButton.vue";
 import TButton from "@/components/common/Button/TButton.vue";
@@ -54,13 +55,14 @@ import ServiceAccountKey from "./components/ServiceAccountKey.vue";
 
 const notification: Ref<Notification | null> = shallowRef(null);
 
-const name = ref("");
 const expiration = ref(365);
 const router = useRouter();
+const route = useRoute();
+const name = ref(route.query.name as string ?? "");
 
-const roles = [RoleNone, RoleReader, RoleOperator, RoleAdmin, RoleInfraProvider]
+const roles = [RoleNone, RoleReader, RoleOperator, RoleAdmin];
 
-const role: Ref<string> = ref(RoleReader)
+const role: Ref<string> = ref(route.query.role as string ?? RoleReader);
 
 const key = ref<string>();
 

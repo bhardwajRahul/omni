@@ -7,6 +7,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/controller"
@@ -20,6 +21,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/siderolabs/omni/client/api/omni/specs"
+	"github.com/siderolabs/omni/client/pkg/cosi/helpers"
 	infrares "github.com/siderolabs/omni/client/pkg/infra/internal/resources"
 	"github.com/siderolabs/omni/client/pkg/infra/provision"
 	"github.com/siderolabs/omni/client/pkg/omni/resources"
@@ -59,6 +61,9 @@ func (ctrl *ProvisionController[T]) Settings() controller.QSettings {
 	var t T
 
 	return controller.QSettings{
+		RunHook: func(ctx context.Context, _ *zap.Logger, q controller.QRuntime) error {
+			return ctrl.cleanupDanglingMachines(ctx, q)
+		},
 		Inputs: []controller.Input{
 			{
 				Namespace: resources.InfraProviderNamespace,
@@ -295,8 +300,6 @@ func (ctrl *ProvisionController[T]) reconcileRunning(ctx context.Context, r cont
 }
 
 func (ctrl *ProvisionController[T]) removePatches(ctx context.Context, r controller.QRuntime, requestID string) (bool, error) {
-	destroyReady := true
-
 	patches, err := safe.ReaderListAll[*infra.ConfigPatchRequest](ctx, r, state.WithLabelQuery(
 		resource.LabelEqual(omni.LabelInfraProviderID, ctrl.providerID),
 		resource.LabelEqual(omni.LabelMachineRequest, requestID),
@@ -305,28 +308,7 @@ func (ctrl *ProvisionController[T]) removePatches(ctx context.Context, r control
 		return false, err
 	}
 
-	for request := range patches.All() {
-		ready, err := r.Teardown(ctx, request.Metadata())
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				continue
-			}
-
-			return false, err
-		}
-
-		if !ready {
-			destroyReady = false
-
-			continue
-		}
-
-		if err = r.Destroy(ctx, request.Metadata()); err != nil && !state.IsNotFoundError(err) {
-			return false, err
-		}
-	}
-
-	return destroyReady, nil
+	return helpers.TeardownAndDestroyAll(ctx, r, patches.Pointers())
 }
 
 func (ctrl *ProvisionController[T]) initializeStatus(ctx context.Context, r controller.QRuntime, logger *zap.Logger, machineRequest *infra.MachineRequest) (*infra.MachineRequestStatus, error) {
@@ -391,35 +373,18 @@ func (ctrl *ProvisionController[T]) reconcileTearingDown(ctx context.Context, r 
 		}
 	}
 
-	resources := []resource.Metadata{
+	resources := []resource.Pointer{
 		resource.NewMetadata(t.ResourceDefinition().DefaultNamespace, t.ResourceDefinition().Type, machineRequest.Metadata().ID(), resource.VersionUndefined),
-		*infra.NewMachineRequestStatus(machineRequest.Metadata().ID()).Metadata(),
+		infra.NewMachineRequestStatus(machineRequest.Metadata().ID()).Metadata(),
 	}
 
-	for _, md := range resources {
-		var ready bool
+	destroyReady, err := helpers.TeardownAndDestroyAll(ctx, r, slices.Values(resources))
+	if err != nil {
+		return err
+	}
 
-		ready, err = r.Teardown(ctx, md)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				continue
-			}
-
-			return err
-		}
-
-		if !ready {
-			return nil
-		}
-
-		err = r.Destroy(ctx, md)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				continue
-			}
-
-			return err
-		}
+	if !destroyReady {
+		return nil
 	}
 
 	if err = ctrl.provisioner.Deprovision(ctx, logger, t, machineRequest); err != nil {
@@ -429,4 +394,29 @@ func (ctrl *ProvisionController[T]) reconcileTearingDown(ctx context.Context, r 
 	logger.Info("machine deprovisioned", zap.String("request_id", machineRequest.Metadata().ID()))
 
 	return r.RemoveFinalizer(ctx, machineRequest.Metadata(), ctrl.Name())
+}
+
+func (ctrl *ProvisionController[T]) cleanupDanglingMachines(ctx context.Context, r controller.QRuntime) error {
+	machines, err := safe.ReaderListAll[T](ctx, r)
+	if err != nil {
+		return err
+	}
+
+	for m := range machines.All() {
+		var request *infra.MachineRequest
+
+		request, err = safe.ReaderGetByID[*infra.MachineRequest](ctx, r, m.Metadata().ID())
+		if err != nil && !state.IsNotFoundError(err) {
+			return err
+		}
+
+		if request == nil {
+			_, err = r.Teardown(ctx, m.Metadata())
+			if err != nil && !state.IsNotFoundError(err) {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

@@ -9,7 +9,6 @@ package omni
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"slices"
 	"time"
@@ -33,6 +32,7 @@ import (
 	"github.com/siderolabs/omni/client/pkg/constants"
 	"github.com/siderolabs/omni/client/pkg/cosi/labels"
 	omniresources "github.com/siderolabs/omni/client/pkg/omni/resources"
+	"github.com/siderolabs/omni/client/pkg/omni/resources/auth"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/infra"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/omni"
 	siderolinkresources "github.com/siderolabs/omni/client/pkg/omni/resources/siderolink"
@@ -125,6 +125,7 @@ func New(talosClientFactory *talos.ClientFactory, dnsService *dns.Service, workl
 			safe.WithResourceCache[*omni.ExtensionsConfiguration](),
 			safe.WithResourceCache[*omni.ImagePullRequest](),
 			safe.WithResourceCache[*omni.ImagePullStatus](),
+			safe.WithResourceCache[*omni.InfraProviderCombinedStatus](),
 			safe.WithResourceCache[*omni.Kubeconfig](),
 			safe.WithResourceCache[*omni.KubernetesNodeAuditResult](),
 			safe.WithResourceCache[*omni.KubernetesStatus](),
@@ -159,6 +160,7 @@ func New(talosClientFactory *talos.ClientFactory, dnsService *dns.Service, workl
 			safe.WithResourceCache[*siderolinkresources.Link](),
 			safe.WithResourceCache[*system.ResourceLabels[*omni.MachineStatus]](),
 			safe.WithResourceCache[*infra.ConfigPatchRequest](),
+			safe.WithResourceCache[*auth.ServiceAccountStatus](),
 			options.WithWarnOnUncachedReads(false), // turn this to true to debug resource cache misses
 		)
 	}
@@ -231,14 +233,10 @@ func New(talosClientFactory *talos.ClientFactory, dnsService *dns.Service, workl
 		),
 		&omnictrl.OngoingTaskController{},
 		omnictrl.NewMachineRequestStatusCleanupController(),
+		omnictrl.NewInfraProviderCleanupController(),
 	}
 
-	imageFactoryBaseURL, err := url.Parse(config.Config.ImageFactoryBaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse image factory base URL %q: %w", config.Config.ImageFactoryBaseURL, err)
-	}
-
-	imageFactoryHost := imageFactoryBaseURL.Host
+	imageFactoryHost := imageFactoryClient.Host()
 	peers := siderolink.NewPeersPool(logger, siderolink.DefaultWireguardHandler)
 
 	qcontrollers := []controller.QController{
@@ -292,6 +290,8 @@ func New(talosClientFactory *talos.ClientFactory, dnsService *dns.Service, workl
 		omnictrl.NewPendingMachineStatusController(),
 		omnictrl.NewMaintenanceConfigStatusController(nil, siderolink.ListenHost, config.Config.EventSinkPort, config.Config.LogServerPort),
 		omnictrl.NewDiscoveryAffiliateDeleteTaskController(clockwork.NewRealClock(), discoveryClientCache),
+		omnictrl.NewInfraProviderCombinedStatusController(),
+		omnictrl.NewServiceAccountStatusController(),
 	}
 
 	if config.Config.Auth.SAML.Enabled {
@@ -552,24 +552,13 @@ func (r *Runtime) Delete(ctx context.Context, setters ...runtime.QueryOption) er
 
 	md := cosiresource.NewMetadata(opts.Namespace, opts.Resource, opts.Name, cosiresource.VersionUndefined)
 
-	_, err := r.state.Teardown(ctx, md)
-	if err != nil {
-		return err
-	}
-
 	if opts.TeardownOnly {
-		return nil
-	}
+		_, err := r.state.Teardown(ctx, md)
 
-	if _, err = r.state.WatchFor(ctx, md, state.WithFinalizerEmpty()); err != nil {
 		return err
 	}
 
-	if err = r.state.Destroy(ctx, md); err != nil && !state.IsNotFoundError(err) {
-		return err
-	}
-
-	return nil
+	return r.state.TeardownAndDestroy(ctx, md)
 }
 
 // State returns runtime state.
