@@ -17,7 +17,7 @@ defineSlots<{
       <slot name="head"></slot>
     </thead>
 
-    <tbody v-if="$slots.body" class="[&_tr]:not-last-of-type:border-b">
+    <tbody v-if="$slots.body" class="[&_tr]:border-t">
       <slot name="body"></slot>
     </tbody>
   </table>

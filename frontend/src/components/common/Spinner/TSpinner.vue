@@ -6,9 +6,9 @@ included in the LICENSE file.
 -->
 <template>
   <div>
-    <svg class="spinner" viewBox="0 0 70 70" xmlns="http://www.w3.org/2000/svg">
+    <svg class="spinner size-full" viewBox="0 0 70 70" xmlns="http://www.w3.org/2000/svg">
       <circle
-        class="path"
+        class="path stroke-primary-p3"
         fill="none"
         stroke-width="9"
         stroke-linecap="round"
@@ -21,10 +21,7 @@ included in the LICENSE file.
 </template>
 
 <style scoped>
-@reference "../../../index.css";
-
 .spinner {
-  @apply h-full w-full;
   animation: rotator 1.4s linear infinite;
 }
 @keyframes rotator {
@@ -40,7 +37,6 @@ included in the LICENSE file.
   stroke-dashoffset: 0;
   transform-origin: center;
   animation: dash 1.4s ease-in-out infinite;
-  @apply stroke-primary-p3;
 }
 
 @keyframes dash {

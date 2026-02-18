@@ -314,9 +314,14 @@ test('node overview tabs', async ({ page }) => {
     await expect(page.getByText('User defined patch')).toBeVisible()
   })
 
-  await test.step('Validate mounts tab', async () => {
-    await page.getByRole('tab', { name: 'Mounts', exact: true }).click()
-    await expect(page.getByText('EPHEMERAL')).toBeVisible()
+  await test.step('Validate disks tab', async () => {
+    await page.getByRole('tab', { name: 'Disks', exact: true }).click()
+
+    const row = page.getByRole('region', { name: 'vda' }).getByRole('row', { name: 'EPHEMERAL' })
+
+    await expect(row).toBeVisible()
+    await expect(row.getByText('xfs')).toBeVisible()
+    await expect(row.getByText('disabled')).toBeVisible()
   })
 
   await test.step('Validate extensions tab', async () => {
