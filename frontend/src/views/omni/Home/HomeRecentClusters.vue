@@ -14,10 +14,11 @@ import { itemID } from '@/api/watch'
 import TButton from '@/components/common/Button/TButton.vue'
 import Card from '@/components/common/Card/Card.vue'
 import CopyButton from '@/components/common/CopyButton/CopyButton.vue'
+import TSpinner from '@/components/common/Spinner/TSpinner.vue'
 import { useResourceWatch } from '@/methods/useResourceWatch'
 import ClusterStatus from '@/views/omni/Clusters/ClusterStatus.vue'
 
-const { data } = useResourceWatch<ClusterStatusSpec>({
+const { data, loading } = useResourceWatch<ClusterStatusSpec>({
   resource: {
     namespace: DefaultNamespace,
     type: ClusterStatusType,
@@ -43,6 +44,11 @@ const { data } = useResourceWatch<ClusterStatusSpec>({
         View All
       </TButton>
     </header>
+
+    <div v-if="!data.length" class="p-4">
+      <TSpinner v-if="loading" class="mx-auto size-4" />
+      <span v-else>No clusters found</span>
+    </div>
 
     <div
       v-for="item in data.slice(0, 5)"
