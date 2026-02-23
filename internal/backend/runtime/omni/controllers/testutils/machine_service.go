@@ -487,8 +487,12 @@ func (ms *MachineServiceMock) MetaDelete(_ context.Context, req *machine.MetaDel
 }
 
 func (ms *MachineServiceMock) Read(request *machine.ReadRequest, grpc grpc.ServerStreamingServer[common.Data]) error {
-	if ms.readHandler != nil {
-		return ms.readHandler(request, grpc)
+	ms.lock.Lock()
+	readHandler := ms.readHandler
+	ms.lock.Unlock()
+
+	if readHandler != nil {
+		return readHandler(request, grpc)
 	}
 
 	return nil

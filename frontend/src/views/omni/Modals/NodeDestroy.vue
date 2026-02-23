@@ -56,9 +56,9 @@ const close = (goBack?: boolean) => {
   router.go(-1)
 }
 
-const forceDestroy = ref(false)
+const forceEtcdLeave = ref(false)
 
-const initRequiresForceDestroy = async () => {
+const initRequiresForceEtcdLeave = async () => {
   try {
     await ResourceService.Get(
       {
@@ -73,7 +73,7 @@ const initRequiresForceDestroy = async () => {
       throw e
     }
 
-    forceDestroy.value = true
+    forceEtcdLeave.value = true
   }
 }
 
@@ -82,7 +82,7 @@ onMounted(async () => {
   let isControlPlane = true
 
   try {
-    await initRequiresForceDestroy()
+    await initRequiresForceEtcdLeave()
 
     const clusterMachineStatus: Resource<ClusterMachineStatusSpec> = await ResourceService.Get(
       {
@@ -160,7 +160,7 @@ const destroyNode = async () => {
     await destroyNodes(
       route.query.cluster as string,
       [route.query.machine as string],
-      forceDestroy.value,
+      forceEtcdLeave.value,
     )
   } catch (e) {
     if (e instanceof ClusterCommandError) {
@@ -182,9 +182,9 @@ const destroyNode = async () => {
 
   close()
 
-  if (forceDestroy.value) {
+  if (forceEtcdLeave.value) {
     showSuccess(
-      `The Machine ${node.value} is Attempted to be Forcefully Removed from the Cluster`,
+      `The Machine ${node.value} is Marked for Destruction with --force-etcd-leave Option`,
       'It might take a while until the machine is completely removed',
     )
   } else {
@@ -200,17 +200,22 @@ const destroyNode = async () => {
   <div class="modal-window">
     <div class="heading">
       <h3 class="text-base text-naturals-n14">
-        <template v-if="!forceDestroy">
+        <template v-if="!forceEtcdLeave">
           Destroy the Node {{ node ?? $route.query.machine }} ?
         </template>
         <template v-else>
           Node {{ node ?? $route.query.machine }} is already being destroyed, attempt to force
-          destroy?
+          leaving etcd?
         </template>
       </h3>
       <CloseButton @click="close(true)" />
     </div>
     <ManagedByTemplatesWarning warning-style="popup" />
+    <p class="text-xs text-primary-p3">
+      Force leaving etcd member on machine {{ node ?? $route.query.machine }} may break the etcd
+      quorum. Do not use this option unless you are sure that the machine is not an etcd member or
+      the machine is already down and will not come back up.
+    </p>
     <p class="mb-2 text-xs">Please confirm the action.</p>
     <div v-if="warning" class="mt-3 text-xs text-yellow-y1">{{ warning }}</div>
 
@@ -218,7 +223,7 @@ const destroyNode = async () => {
       <div class="flex-1" />
       <TButton class="h-9 w-32" :disabled="scalingDown" @click="destroyNode">
         <TSpinner v-if="scalingDown" class="h-5 w-5" />
-        <span v-else-if="forceDestroy">Force Destroy</span>
+        <span v-else-if="forceEtcdLeave">Force Etcd Leave</span>
         <span v-else>Destroy</span>
       </TButton>
     </div>

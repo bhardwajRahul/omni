@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -43,8 +44,9 @@ var unlockCmd = &cobra.Command{
 }
 
 var machineDeleteCmdFlags struct {
-	timeout time.Duration
-	force   bool
+	timeout        time.Duration
+	forceEtcdLeave bool
+	noAsk          bool
 }
 
 var machineDeleteCmd = &cobra.Command{
@@ -55,7 +57,7 @@ var machineDeleteCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(_ *cobra.Command, args []string) error {
 		return access.WithClient(func(ctx context.Context, client *client.Client) error {
-			return deleteMachine(ctx, client.Omni().State(), args[0], machineDeleteCmdFlags.force)
+			return deleteMachine(ctx, client.Omni().State(), args[0])
 		})
 	},
 }
@@ -88,7 +90,7 @@ func setLocked(machineID resource.ID, lock bool) func(context.Context, *client.C
 	}
 }
 
-func deleteMachine(ctx context.Context, st state.State, id resource.ID, force bool) error {
+func deleteMachine(ctx context.Context, st state.State, id resource.ID) error {
 	ctx, cancel := context.WithTimeout(ctx, machineDeleteCmdFlags.timeout)
 	defer cancel()
 
@@ -99,7 +101,26 @@ func deleteMachine(ctx context.Context, st state.State, id resource.ID, force bo
 		return err
 	}
 
-	if force {
+	if machineDeleteCmdFlags.forceEtcdLeave {
+		if !machineDeleteCmdFlags.noAsk {
+			var response string
+
+			fmt.Fprintf(os.Stderr, `Force leaving etcd member on machine %s may break the etcd quorum.
+Do not use this option unless you are sure that the machine is not an etcd member or the machine is already down and will not come back up.
+Do you want to continue? (y/N): `, id)
+
+			_, err = fmt.Scanln(&response)
+			if err != nil {
+				return fmt.Errorf("failed to read user input: %w", err)
+			}
+
+			if !strings.EqualFold(response, "y") {
+				fmt.Fprintln(os.Stderr, "aborting machine deletion")
+
+				return nil
+			}
+		}
+
 		fmt.Fprintf(os.Stderr, "create %s for machine %s\n", omni.NodeForceDestroyRequestType, id)
 
 		forceDestroyRequest := omni.NewNodeForceDestroyRequest(id)
@@ -164,7 +185,8 @@ var machineCmd = &cobra.Command{
 }
 
 func init() {
-	machineDeleteCmd.PersistentFlags().BoolVarP(&machineDeleteCmdFlags.force, "force", "f", false, "force destroy the machine")
+	machineDeleteCmd.PersistentFlags().BoolVar(&machineDeleteCmdFlags.forceEtcdLeave, "force-etcd-leave", false, "force leave etcd")
+	machineDeleteCmd.PersistentFlags().BoolVarP(&machineDeleteCmdFlags.noAsk, "yes-i-am-really-sure", "y", false, "do not ask for confirmation when using --force-etcd-leave")
 	machineDeleteCmd.PersistentFlags().DurationVarP(&machineDeleteCmdFlags.timeout, "timeout", "t", 5*time.Minute, "timeout for the machine deletion")
 
 	machineCmd.AddCommand(lockCmd)

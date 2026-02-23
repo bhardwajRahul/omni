@@ -758,7 +758,7 @@ func (ctrl *ClusterMachineConfigStatusController) shouldResetGraceful(
 	}
 
 	if forceDestroyRequest != nil {
-		logger.Info("node is requested to be force destroyed")
+		logger.Info("node force etcd leave was requested")
 
 		return false, nil
 	}
