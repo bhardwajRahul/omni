@@ -77,11 +77,11 @@ const routes = computed(() => {
         <TabContent
           v-for="{ name, to } in routes"
           :key="name"
-          class="mt-4 grow overflow-y-auto"
+          class="grow overflow-y-auto"
           :class="{ 'px-4 md:px-6': to.name !== 'NodeExtensions' }"
           :value="to.name"
         >
-          <RouterView class="h-full" />
+          <RouterView />
         </TabContent>
       </template>
     </Tabs>
