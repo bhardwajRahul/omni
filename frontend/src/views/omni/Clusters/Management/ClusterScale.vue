@@ -129,10 +129,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3">
-    <PageHeader :title="`Add Machines to Cluster ${$route.params.cluster}`" />
-    <ManagedByTemplatesWarning :resource="currentCluster" />
-    <template v-if="existingResources.length > 0">
+  <div class="flex h-full flex-col gap-3 pt-6">
+    <PageHeader :title="`Add Machines to Cluster ${$route.params.cluster}`" class="px-6" />
+
+    <div v-if="existingResources.length > 0" class="grow overflow-y-auto px-6 pb-6">
+      <ManagedByTemplatesWarning :resource="currentCluster" />
+
       <div class="text-naturals-n13">Machine Sets</div>
       <MachineSets />
       <div class="text-naturals-n13">Available Machines</div>
@@ -176,21 +178,24 @@ onMounted(async () => {
           />
         </template>
       </Watch>
-      <div
-        class="-mx-6 -mb-6 flex h-16 items-center border-t border-naturals-n4 bg-naturals-n1 px-5 py-3"
-      >
-        <ClusterMenu
-          class="w-full"
-          :control-planes="state.controlPlanesCount"
-          :workers="state.workersCount"
-          :on-submit="scaleCluster"
-          action="Update"
-          :warning="quorumWarning"
-        />
-      </div>
-    </template>
+    </div>
+
     <div v-else class="flex flex-1 items-center justify-center">
       <TSpinner class="h-6 w-6" />
+    </div>
+
+    <div
+      class="flex h-16 shrink-0 items-center border-t border-naturals-n4 bg-naturals-n1 px-5 py-3"
+    >
+      <ClusterMenu
+        class="w-full"
+        :control-planes="state.controlPlanesCount"
+        :workers="state.workersCount"
+        :on-submit="scaleCluster"
+        :disabled="!existingResources.length"
+        action="Update"
+        :warning="quorumWarning"
+      />
     </div>
   </div>
 </template>

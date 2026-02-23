@@ -94,6 +94,7 @@ export const routes: RouteRecordRaw[] = [
           {
             path: 'create',
             name: 'ClusterCreate',
+            meta: { disablePadding: true },
             component: () => import('@/views/omni/Clusters/Management/ClusterCreate.vue'),
           },
           {
@@ -113,6 +114,7 @@ export const routes: RouteRecordRaw[] = [
               {
                 path: 'scale',
                 name: 'ClusterScale',
+                meta: { disablePadding: true },
                 component: () => import('@/views/omni/Clusters/Management/ClusterScale.vue'),
               },
               {

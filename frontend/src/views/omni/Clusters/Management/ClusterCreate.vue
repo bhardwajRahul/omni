@@ -322,21 +322,19 @@ const list = useTemplateRef('list')
 </script>
 
 <template>
-  <div class="flex flex-col">
-    <div class="flex items-start gap-1">
-      <PageHeader title="Create Cluster" class="flex-1" />
-    </div>
-    <div class="flex flex-1 flex-col items-stretch gap-4">
-      <div class="flex h-9 w-full gap-2">
+  <div class="flex h-full flex-col pt-6">
+    <PageHeader title="Create Cluster" class="px-6" />
+
+    <div class="flex grow flex-col items-stretch gap-4 overflow-y-auto px-6 pb-6">
+      <div class="flex flex-wrap gap-2">
         <TInput
           title="Cluster Name"
-          class="h-full flex-1"
+          class="grow"
           placeholder="..."
           :model-value="state.cluster.name ?? ''"
           @update:model-value="(value) => (state.cluster.name = value)"
         />
         <TSelectList
-          class="h-full"
           title="Talos Version"
           :values="talosVersions"
           :default-value="state.cluster.talosVersion"
@@ -344,7 +342,6 @@ const list = useTemplateRef('list')
         />
         <TSelectList
           ref="kubernetesVersionSelector"
-          class="h-full"
           title="Kubernetes Version"
           :values="kubernetesVersions"
           :default-value="state.cluster.kubernetesVersion"
@@ -426,7 +423,7 @@ const list = useTemplateRef('list')
         ]"
         search
         pagination
-        class="flex-1"
+        class="h-max shrink-0"
       >
         <template #norecords>
           <TAlert v-if="!$slots.norecords" type="info" title="No Machines Available">
@@ -445,20 +442,20 @@ const list = useTemplateRef('list')
           />
         </template>
       </TList>
-      <div
-        v-if="state.controlPlanesCount !== 0"
-        class="-mx-6 -mb-6 flex h-16 items-center border-t border-naturals-n4 bg-naturals-n1 px-5 py-3"
-      >
-        <ClusterMenu
-          class="w-full"
-          :control-planes="state.controlPlanesCount"
-          :workers="state.workersCount"
-          :on-submit="createCluster"
-          :on-reset="() => reset++"
-          :disabled="!canCreateClusters"
-          action="Create Cluster"
-        />
-      </div>
+    </div>
+
+    <div
+      class="flex h-16 shrink-0 items-center border-t border-naturals-n4 bg-naturals-n1 px-5 py-3"
+    >
+      <ClusterMenu
+        class="w-full"
+        :control-planes="state.controlPlanesCount"
+        :workers="state.workersCount"
+        :on-submit="createCluster"
+        :on-reset="() => reset++"
+        :disabled="!canCreateClusters || !state.controlPlanesCount"
+        action="Create Cluster"
+      />
     </div>
   </div>
 </template>
