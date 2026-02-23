@@ -8,6 +8,7 @@ package saml
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/kvutils"
@@ -35,6 +37,10 @@ import (
 	"github.com/siderolabs/omni/internal/pkg/auth/role"
 	"github.com/siderolabs/omni/internal/pkg/auth/user"
 )
+
+// sloSessionCookieTTL is how long the SLO cookie persists. It must outlive the browser
+// session so that logout can send a LogoutRequest to the IdP even after a browser restart.
+const sloSessionCookieTTL = 24 * time.Hour
 
 // UserInfo describes user identity and fullname.
 type UserInfo struct {
@@ -65,6 +71,8 @@ type SessionProvider struct {
 
 // CreateSession is called when we have received a valid SAML assertion and
 // should create a new session and do redirect.
+//
+//nolint:gocognit,gocyclo,cyclop
 func (sp *SessionProvider) CreateSession(w http.ResponseWriter, r *http.Request, assertion *saml.Assertion) error {
 	hashInput := ""
 
@@ -167,6 +175,35 @@ func (sp *SessionProvider) CreateSession(w http.ResponseWriter, r *http.Request,
 
 	if err = sp.ensureUser(ctx, user.Identity, samlLabels); err != nil {
 		return err
+	}
+
+	if nameID := assertion.Subject.NameID; nameID != nil {
+		data := sloSessionData{
+			NameID: nameID.Value,
+			Format: nameID.Format,
+		}
+
+		for _, authnStatement := range assertion.AuthnStatements {
+			if authnStatement.SessionIndex != "" {
+				data.SessionIndex = authnStatement.SessionIndex
+
+				break
+			}
+		}
+
+		if cookieValue, marshalErr := json.Marshal(data); marshalErr != nil {
+			sp.logger.Warn("failed to marshal SLO session cookie data", zap.Error(marshalErr))
+		} else {
+			http.SetCookie(w, &http.Cookie{
+				Name:     NameIDCookieName,
+				Value:    base64.URLEncoding.EncodeToString(cookieValue),
+				MaxAge:   int(sloSessionCookieTTL.Seconds()),
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteLaxMode,
+			})
+		}
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("/authenticate?%s", query.Encode()), http.StatusSeeOther)

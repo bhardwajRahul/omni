@@ -911,12 +911,12 @@ func registerAuthHandlers(mux *http.ServeMux, samlHandler *samlsp.Middleware, oi
 
 	switch {
 	case samlHandler != nil:
-		saml.RegisterHandlers(samlHandler, mux, logger)
+		advertisedURL := cfg.Services.Api.GetAdvertisedURL()
+
+		saml.RegisterHandlers(samlHandler, mux, logger, advertisedURL)
 
 		loginHandler = samlHandler.HandleStartAuthFlow
-		logoutHandler = func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, cfg.Services.Api.GetAdvertisedURL(), http.StatusSeeOther)
-		}
+		logoutHandler = saml.CreateLogoutHandler(samlHandler, advertisedURL, logger)
 	case oidcProvider != nil:
 		handler, err := oidc.NewOIDCHandler(cfg.Services.Api.GetAdvertisedURL(), cfg.Auth.Oidc, oidcProvider)
 		if err != nil {
