@@ -114,8 +114,8 @@ const {
 
     <hr class="border border-naturals-n4" />
 
-    <section class="flex flex-col gap-2">
-      <h3 class="text-sm font-medium">Add Machines</h3>
+    <section class="flex flex-col gap-2" aria-labelledby="add-machines-header">
+      <h3 id="add-machines-header" class="text-sm font-medium">Add Machines</h3>
 
       <TButton
         is="router-link"

@@ -196,7 +196,7 @@ test('exposed services', async ({ page }, testInfo) => {
     await page.getByRole('link', { name: 'Clusters' }).click()
 
     await expect(page).toHaveURL('/clusters')
-    await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Clusters', exact: true })).toBeVisible()
 
     await page.getByRole('link', { name: clusterName, exact: true }).click()
     await expect(page.getByRole('heading', { name: clusterName, exact: true })).toBeVisible()
@@ -236,7 +236,7 @@ test('exposed services', async ({ page }, testInfo) => {
     await page.getByRole('link', { name: 'Clusters' }).click()
 
     await expect(page).toHaveURL('/clusters')
-    await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Clusters', exact: true })).toBeVisible()
 
     await page.getByRole('link', { name: clusterName, exact: true }).click()
     await expect(page.getByRole('heading', { name: clusterName, exact: true })).toBeVisible()

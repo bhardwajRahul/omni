@@ -5,26 +5,19 @@ Use of this software is governed by the Business Source License
 included in the LICENSE file.
 -->
 <script setup lang="ts">
-import { Runtime } from '@/api/common/omni.pb'
+import type { Resource } from '@/api/grpc'
 import type { MachineStatusSpec } from '@/api/omni/specs/omni.pb'
-import { DefaultNamespace, MachineStatusType } from '@/api/resources'
 import { itemID } from '@/api/watch'
 import TButton from '@/components/common/Button/TButton.vue'
 import Card from '@/components/common/Card/Card.vue'
 import CopyButton from '@/components/common/CopyButton/CopyButton.vue'
 import TIcon from '@/components/common/Icon/TIcon.vue'
 import TSpinner from '@/components/common/Spinner/TSpinner.vue'
-import { useResourceWatch } from '@/methods/useResourceWatch'
 
-const { data, loading } = useResourceWatch<MachineStatusSpec>({
-  resource: {
-    namespace: DefaultNamespace,
-    type: MachineStatusType,
-  },
-  runtime: Runtime.Omni,
-  sortByField: 'created',
-  sortDescending: true,
-})
+defineProps<{
+  machines: Resource<MachineStatusSpec>[]
+  loading: boolean
+}>()
 </script>
 
 <template>
@@ -43,13 +36,13 @@ const { data, loading } = useResourceWatch<MachineStatusSpec>({
       </TButton>
     </header>
 
-    <div v-if="!data.length" class="p-4">
+    <div v-if="!machines.length" class="p-4">
       <TSpinner v-if="loading" class="mx-auto size-4" />
       <span v-else>No machines found</span>
     </div>
 
     <div
-      v-for="item in data.slice(0, 5)"
+      v-for="item in machines.slice(0, 5)"
       :key="itemID(item)"
       class="grid grid-cols-3 items-center gap-2 border-t border-naturals-n4 px-4 py-3 max-sm:grid-cols-[1fr_1fr_auto]"
     >

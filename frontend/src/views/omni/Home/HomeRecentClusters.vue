@@ -7,26 +7,19 @@ included in the LICENSE file.
 <script setup lang="ts">
 import pluralize from 'pluralize'
 
-import { Runtime } from '@/api/common/omni.pb'
+import type { Resource } from '@/api/grpc'
 import type { ClusterStatusSpec } from '@/api/omni/specs/omni.pb'
-import { ClusterStatusType, DefaultNamespace } from '@/api/resources'
 import { itemID } from '@/api/watch'
 import TButton from '@/components/common/Button/TButton.vue'
 import Card from '@/components/common/Card/Card.vue'
 import CopyButton from '@/components/common/CopyButton/CopyButton.vue'
 import TSpinner from '@/components/common/Spinner/TSpinner.vue'
-import { useResourceWatch } from '@/methods/useResourceWatch'
 import ClusterStatus from '@/views/omni/Clusters/ClusterStatus.vue'
 
-const { data, loading } = useResourceWatch<ClusterStatusSpec>({
-  resource: {
-    namespace: DefaultNamespace,
-    type: ClusterStatusType,
-  },
-  runtime: Runtime.Omni,
-  sortByField: 'created',
-  sortDescending: true,
-})
+defineProps<{
+  clusters: Resource<ClusterStatusSpec>[]
+  loading: boolean
+}>()
 </script>
 
 <template>
@@ -45,13 +38,13 @@ const { data, loading } = useResourceWatch<ClusterStatusSpec>({
       </TButton>
     </header>
 
-    <div v-if="!data.length" class="p-4">
+    <div v-if="!clusters.length" class="p-4">
       <TSpinner v-if="loading" class="mx-auto size-4" />
       <span v-else>No clusters found</span>
     </div>
 
     <div
-      v-for="item in data.slice(0, 5)"
+      v-for="item in clusters.slice(0, 5)"
       :key="itemID(item)"
       class="grid grid-cols-3 items-center gap-2 border-t border-naturals-n4 px-4 py-3 max-sm:grid-cols-[1fr_1fr_auto]"
     >

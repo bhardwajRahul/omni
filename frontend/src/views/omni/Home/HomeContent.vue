@@ -5,12 +5,40 @@ Use of this software is governed by the Business Source License
 included in the LICENSE file.
 -->
 <script setup lang="ts">
+import { Runtime } from '@/api/common/omni.pb'
+import type { ClusterStatusSpec, MachineStatusSpec } from '@/api/omni/specs/omni.pb'
+import { ClusterStatusType, DefaultNamespace, MachineStatusType } from '@/api/resources'
 import { canReadClusters, canReadMachines } from '@/methods/auth'
+import { useResourceWatch } from '@/methods/useResourceWatch'
 import HomeClustersChart from '@/views/omni/Home/HomeClustersChart.vue'
+import HomeClustersTutorialCard from '@/views/omni/Home/HomeClustersTutorialCard.vue'
 import HomeGeneralInformation from '@/views/omni/Home/HomeGeneralInformation.vue'
 import HomeMachinesChart from '@/views/omni/Home/HomeMachinesChart.vue'
+import HomeMachinesTutorialCard from '@/views/omni/Home/HomeMachinesTutorialCard.vue'
 import HomeRecentClusters from '@/views/omni/Home/HomeRecentClusters.vue'
 import HomeRecentMachines from '@/views/omni/Home/HomeRecentMachines.vue'
+
+const { data: clusters, loading: clustersLoading } = useResourceWatch<ClusterStatusSpec>(() => ({
+  skip: !canReadClusters.value,
+  resource: {
+    namespace: DefaultNamespace,
+    type: ClusterStatusType,
+  },
+  runtime: Runtime.Omni,
+  sortByField: 'created',
+  sortDescending: true,
+}))
+
+const { data: machines, loading: machinesLoading } = useResourceWatch<MachineStatusSpec>(() => ({
+  skip: !canReadMachines.value,
+  resource: {
+    namespace: DefaultNamespace,
+    type: MachineStatusType,
+  },
+  runtime: Runtime.Omni,
+  sortByField: 'created',
+  sortDescending: true,
+}))
 
 // Disabled entirely until we decide where to get the information from
 const showReleaseNotes = false
@@ -30,9 +58,15 @@ const showReleaseNotes = false
           'xl:grid-cols-2': showReleaseNotes && (!canReadClusters || !canReadMachines),
         }"
       >
-        <div class="flex flex-col gap-4">
+        <div v-if="canReadClusters || canReadMachines" class="flex flex-col gap-4">
+          <template
+            v-if="canReadClusters && canReadMachines && !machinesLoading && !clustersLoading"
+          >
+            <HomeMachinesTutorialCard v-if="!machines.length" />
+            <HomeClustersTutorialCard v-else-if="!clusters.length" />
+          </template>
+
           <div
-            v-if="canReadClusters || canReadMachines"
             class="grid grid-cols-1 gap-2"
             :class="{ 'xl:grid-cols-2': canReadClusters && canReadMachines }"
           >
@@ -40,9 +74,9 @@ const showReleaseNotes = false
             <HomeMachinesChart v-if="canReadMachines" />
           </div>
 
-          <div v-if="canReadClusters || canReadMachines" class="flex flex-col gap-2">
-            <HomeRecentClusters v-if="canReadClusters" />
-            <HomeRecentMachines v-if="canReadMachines" />
+          <div class="flex flex-col gap-2">
+            <HomeRecentClusters v-if="canReadClusters" :clusters :loading="clustersLoading" />
+            <HomeRecentMachines v-if="canReadMachines" :machines :loading="machinesLoading" />
           </div>
         </div>
 

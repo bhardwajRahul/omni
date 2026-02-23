@@ -30,7 +30,7 @@ test('Create cluster using machine classes', async ({ page }) => {
     await page.getByRole('link', { name: 'Clusters' }).click()
 
     await expect(page).toHaveURL('/clusters')
-    await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Clusters', exact: true })).toBeVisible()
   })
 
   await test.step('Create cluster', async () => {
@@ -79,7 +79,7 @@ test('Scale cluster using machine classes', async ({ omnictl, cluster, page }, t
     await page.getByRole('link', { name: 'Clusters' }).click()
 
     await expect(page).toHaveURL('/clusters')
-    await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Clusters', exact: true })).toBeVisible()
   })
 
   await expect(

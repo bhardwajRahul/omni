@@ -17,7 +17,10 @@ test('Download installation media', async ({ page }, testInfo) => {
 
   await test.step('Go to wizard', async () => {
     await page.goto('/')
-    await page.getByRole('link', { name: 'Download Installation Media' }).click()
+    await page
+      .getByRole('region', { name: 'Add Machines' })
+      .getByRole('link', { name: 'Download Installation Media' })
+      .click()
 
     const firstStepHeading = page.getByRole('heading', { name: 'Create New Media' })
 
