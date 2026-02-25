@@ -194,6 +194,8 @@ func NewClusterStatusController(embeddedDiscoveryServiceEnabled bool) *ClusterSt
 					Machines:                    &machines,
 					HasConnectedControlPlanes:   clusterHasConnectedControlPlanes,
 					UseEmbeddedDiscoveryService: useEmbeddedDiscoveryService,
+					TalosVersion:                cluster.TypedSpec().Value.GetTalosVersion(),
+					KubernetesVersion:           cluster.TypedSpec().Value.GetKubernetesVersion(),
 				}
 
 				helpers.CopyUserLabels(clusterStatus, cluster.Metadata().Labels().Raw())

@@ -3113,8 +3113,12 @@ type ClusterStatusSpec struct {
 	//
 	// This is the final decision, taking the feature toggle, the version of the cluster and the Omni instance configuration (whether the feature is enabled or not) into account.
 	UseEmbeddedDiscoveryService bool `protobuf:"varint,8,opt,name=use_embedded_discovery_service,json=useEmbeddedDiscoveryService,proto3" json:"use_embedded_discovery_service,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+	// TalosVersion is the Talos version of the cluster, copied from the Cluster spec.
+	TalosVersion string `protobuf:"bytes,9,opt,name=talos_version,json=talosVersion,proto3" json:"talos_version,omitempty"`
+	// KubernetesVersion is the Kubernetes version of the cluster, copied from the Cluster spec.
+	KubernetesVersion string `protobuf:"bytes,10,opt,name=kubernetes_version,json=kubernetesVersion,proto3" json:"kubernetes_version,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ClusterStatusSpec) Reset() {
@@ -3201,6 +3205,20 @@ func (x *ClusterStatusSpec) GetUseEmbeddedDiscoveryService() bool {
 		return x.UseEmbeddedDiscoveryService
 	}
 	return false
+}
+
+func (x *ClusterStatusSpec) GetTalosVersion() string {
+	if x != nil {
+		return x.TalosVersion
+	}
+	return ""
+}
+
+func (x *ClusterStatusSpec) GetKubernetesVersion() string {
+	if x != nil {
+		return x.KubernetesVersion
+	}
+	return ""
 }
 
 // ClusterUUID keeps the UUID of the cluster.
@@ -10647,7 +10665,7 @@ const file_omni_specs_omni_proto_rawDesc = "" +
 	"\x05total\x18\x01 \x01(\rR\x05total\x12\x18\n" +
 	"\ahealthy\x18\x02 \x01(\rR\ahealthy\x12\x1c\n" +
 	"\tconnected\x18\x03 \x01(\rR\tconnected\x12\x1c\n" +
-	"\trequested\x18\x04 \x01(\rR\trequested\"\xe3\x03\n" +
+	"\trequested\x18\x04 \x01(\rR\trequested\"\xb7\x04\n" +
 	"\x11ClusterStatusSpec\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x12+\n" +
 	"\bmachines\x18\x02 \x01(\v2\x0f.specs.MachinesR\bmachines\x124\n" +
@@ -10656,7 +10674,10 @@ const file_omni_specs_omni_proto_rawDesc = "" +
 	"\x12kubernetesAPIReady\x18\x05 \x01(\bR\x12kubernetesAPIReady\x12,\n" +
 	"\x11controlplaneReady\x18\x06 \x01(\bR\x11controlplaneReady\x12?\n" +
 	"\x1chas_connected_control_planes\x18\a \x01(\bR\x19hasConnectedControlPlanes\x12C\n" +
-	"\x1euse_embedded_discovery_service\x18\b \x01(\bR\x1buseEmbeddedDiscoveryService\"S\n" +
+	"\x1euse_embedded_discovery_service\x18\b \x01(\bR\x1buseEmbeddedDiscoveryService\x12#\n" +
+	"\rtalos_version\x18\t \x01(\tR\ftalosVersion\x12-\n" +
+	"\x12kubernetes_version\x18\n" +
+	" \x01(\tR\x11kubernetesVersion\"S\n" +
 	"\x05Phase\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\x0e\n" +
 	"\n" +

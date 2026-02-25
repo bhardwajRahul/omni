@@ -904,6 +904,8 @@ func (m *ClusterStatusSpec) CloneVT() *ClusterStatusSpec {
 	r.ControlplaneReady = m.ControlplaneReady
 	r.HasConnectedControlPlanes = m.HasConnectedControlPlanes
 	r.UseEmbeddedDiscoveryService = m.UseEmbeddedDiscoveryService
+	r.TalosVersion = m.TalosVersion
+	r.KubernetesVersion = m.KubernetesVersion
 	if len(m.unknownFields) > 0 {
 		r.unknownFields = make([]byte, len(m.unknownFields))
 		copy(r.unknownFields, m.unknownFields)
@@ -4321,6 +4323,12 @@ func (this *ClusterStatusSpec) EqualVT(that *ClusterStatusSpec) bool {
 		return false
 	}
 	if this.UseEmbeddedDiscoveryService != that.UseEmbeddedDiscoveryService {
+		return false
+	}
+	if this.TalosVersion != that.TalosVersion {
+		return false
+	}
+	if this.KubernetesVersion != that.KubernetesVersion {
 		return false
 	}
 	return string(this.unknownFields) == string(that.unknownFields)
@@ -9775,6 +9783,20 @@ func (m *ClusterStatusSpec) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.unknownFields != nil {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
+	}
+	if len(m.KubernetesVersion) > 0 {
+		i -= len(m.KubernetesVersion)
+		copy(dAtA[i:], m.KubernetesVersion)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.KubernetesVersion)))
+		i--
+		dAtA[i] = 0x52
+	}
+	if len(m.TalosVersion) > 0 {
+		i -= len(m.TalosVersion)
+		copy(dAtA[i:], m.TalosVersion)
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.TalosVersion)))
+		i--
+		dAtA[i] = 0x4a
 	}
 	if m.UseEmbeddedDiscoveryService {
 		i--
@@ -16530,6 +16552,14 @@ func (m *ClusterStatusSpec) SizeVT() (n int) {
 	}
 	if m.UseEmbeddedDiscoveryService {
 		n += 2
+	}
+	l = len(m.TalosVersion)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	l = len(m.KubernetesVersion)
+	if l > 0 {
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	n += len(m.unknownFields)
 	return n
@@ -25436,6 +25466,70 @@ func (m *ClusterStatusSpec) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 			m.UseEmbeddedDiscoveryService = bool(v != 0)
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TalosVersion", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TalosVersion = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field KubernetesVersion", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.KubernetesVersion = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

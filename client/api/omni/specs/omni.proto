@@ -582,6 +582,12 @@ message ClusterStatusSpec {
   //
   // This is the final decision, taking the feature toggle, the version of the cluster and the Omni instance configuration (whether the feature is enabled or not) into account.
   bool use_embedded_discovery_service = 8;
+
+  // TalosVersion is the Talos version of the cluster, copied from the Cluster spec.
+  string talos_version = 9;
+
+  // KubernetesVersion is the Kubernetes version of the cluster, copied from the Cluster spec.
+  string kubernetes_version = 10;
 }
 
 // ClusterUUID keeps the UUID of the cluster.

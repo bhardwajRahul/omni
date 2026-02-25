@@ -469,6 +469,8 @@ export type ClusterStatusSpec = {
   controlplaneReady?: boolean
   has_connected_control_planes?: boolean
   use_embedded_discovery_service?: boolean
+  talos_version?: string
+  kubernetes_version?: string
 }
 
 export type ClusterUUID = {
