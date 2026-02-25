@@ -23,7 +23,6 @@ import (
 
 	"github.com/siderolabs/omni/client/pkg/client"
 	"github.com/siderolabs/omni/client/pkg/omni/resources/siderolink"
-	"github.com/siderolabs/omni/client/pkg/omnictl/config"
 	"github.com/siderolabs/omni/client/pkg/omnictl/internal/access"
 )
 
@@ -318,17 +317,12 @@ var (
 					return err
 				}
 
-				conf, err := config.Init(access.CmdFlags.Omniconfig, false)
+				apiConfig, err := safe.ReaderGetByID[*siderolink.APIConfig](ctx, client.Omni().State(), siderolink.ConfigID)
 				if err != nil {
 					return err
 				}
 
-				ctxConf, err := conf.GetContext(access.CmdFlags.Context)
-				if err != nil {
-					return err
-				}
-
-				fmt.Println(constructJoinURL(ctxConf.URL, tokenID))
+				fmt.Println(constructJoinURL(apiConfig.TypedSpec().Value.MachineApiAdvertisedUrl, tokenID))
 
 				return nil
 			})
