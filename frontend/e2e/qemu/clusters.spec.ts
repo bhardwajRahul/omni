@@ -324,6 +324,11 @@ test('node overview tabs', async ({ page }) => {
     await expect(row.getByText('disabled')).toBeVisible()
   })
 
+  await test.step('Validate devices tab', async () => {
+    await page.getByRole('tab', { name: 'Devices', exact: true }).click()
+    await expect(page.getByText('Ethernet controller')).toBeVisible()
+  })
+
   await test.step('Validate extensions tab', async () => {
     await page.getByRole('tab', { name: 'Extensions', exact: true }).click()
     await expect(page.getByText('siderolabs/hello-world-service')).toBeVisible()

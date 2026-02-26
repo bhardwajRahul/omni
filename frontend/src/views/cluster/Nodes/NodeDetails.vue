@@ -51,6 +51,10 @@ const routes = computed(() => {
       to: { name: 'NodeDisks', params: { machine: machine.value } },
     },
     {
+      name: 'Devices',
+      to: { name: 'NodeDevices', params: { machine: machine.value } },
+    },
+    {
       name: 'Extensions',
       to: { name: 'NodeExtensions', params: { machine: machine.value } },
     },
