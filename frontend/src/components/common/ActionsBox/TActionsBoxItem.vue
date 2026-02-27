@@ -21,9 +21,9 @@ const props = defineProps<
     danger?: boolean
   }
 >()
-const emits = defineEmits<DropdownMenuItemEmits>()
+const emit = defineEmits<DropdownMenuItemEmits>()
 
-const emitsAsProps = useEmitAsProps(emits)
+const emitsAsProps = useEmitAsProps(emit)
 </script>
 
 <template>

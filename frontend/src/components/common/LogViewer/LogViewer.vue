@@ -8,8 +8,7 @@ included in the LICENSE file.
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 
 import { useClipboard } from '@vueuse/core'
-import type { Component } from 'vue'
-import { computed, nextTick, onMounted, onUpdated, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onMounted, onUpdated, ref, toRefs, useTemplateRef, watch } from 'vue'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import WordHighlighter from 'vue-word-highlighter'
 
@@ -27,7 +26,7 @@ const props = withDefaults(defineProps<Props>(), {})
 const { copy, copied } = useClipboard()
 
 const follow = ref(true)
-const logView: Component = ref(null)
+const logView = useTemplateRef('logView')
 const { searchOption, logs } = toRefs(props)
 
 const waitUpdate = ref(false)
@@ -39,7 +38,7 @@ const scrollToBottom = () => {
 
   waitUpdate.value = false
   nextTick(() => {
-    logView.value.scrollToItem(filteredLogs.value.length)
+    logView.value?.scrollToItem(filteredLogs.value.length)
   })
 }
 

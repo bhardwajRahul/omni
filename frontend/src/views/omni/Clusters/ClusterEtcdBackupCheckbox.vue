@@ -28,7 +28,9 @@ const props = defineProps<{
 
 const { cluster } = toRefs(props)
 
-const emit = defineEmits(['update:cluster'])
+const emit = defineEmits<{
+  'update:cluster': [(typeof props)['cluster']]
+}>()
 
 const enabled = computed(() => {
   return cluster.value.backup_configuration?.enabled === true

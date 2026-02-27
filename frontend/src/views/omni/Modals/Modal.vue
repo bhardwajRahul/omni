@@ -36,7 +36,7 @@ const props = withDefaults(
   { cancelLabel: 'Cancel' },
 )
 
-const emits = defineEmits<DialogRootEmits & { confirm: [] }>()
+const emit = defineEmits<DialogRootEmits & { confirm: [] }>()
 
 const dialogRootProps = reactiveOmit(
   props,
@@ -46,7 +46,7 @@ const dialogRootProps = reactiveOmit(
   'actionDisabled',
   'loading',
 )
-const forwarded = useForwardPropsEmits(dialogRootProps, emits)
+const forwarded = useForwardPropsEmits(dialogRootProps, emit)
 </script>
 
 <template>

@@ -7,7 +7,7 @@ included in the LICENSE file.
 <script setup lang="ts">
 import { RadioGroup, RadioGroupOption } from '@headlessui/vue'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
-import { computed, ref, toRefs, watch } from 'vue'
+import { computed, ref, toRefs, useTemplateRef, watch } from 'vue'
 
 import IconButton from '@/components/common/Button/IconButton.vue'
 import TIcon from '@/components/common/Icon/TIcon.vue'
@@ -23,9 +23,11 @@ export type PickerOption = {
   disabled?: boolean
 }
 
-const emit = defineEmits(['update:machineSetIndex'])
+const emit = defineEmits<{
+  'update:machineSetIndex': [number | undefined]
+}>()
 const showPicker = ref(false)
-const optionsView = ref()
+const optionsView = useTemplateRef('optionsView')
 
 const props = defineProps<{
   machineSetIndex?: number
@@ -103,7 +105,7 @@ const onSelect = (index: number) => {
           >
             <IconButton
               icon="arrow-up"
-              @click="optionsView.$el.scrollBy({ top: -24, behavior: 'smooth' })"
+              @click="optionsView?.$el.scrollBy({ top: -24, behavior: 'smooth' })"
             />
             <RadioGroup
               ref="optionsView"
@@ -144,7 +146,7 @@ const onSelect = (index: number) => {
             </RadioGroup>
             <IconButton
               icon="arrow-down"
-              @click="optionsView.$el.scrollBy({ top: 24, behavior: 'smooth' })"
+              @click="optionsView?.$el.scrollBy({ top: 24, behavior: 'smooth' })"
             />
           </PopoverContent>
         </PopoverPortal>

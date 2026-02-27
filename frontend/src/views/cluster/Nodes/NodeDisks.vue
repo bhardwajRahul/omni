@@ -51,6 +51,7 @@ export interface TalosMountStatusSpec {
   target?: string
 }
 </script>
+
 <script setup lang="ts">
 import { computed } from 'vue'
 

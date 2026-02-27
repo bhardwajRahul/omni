@@ -6,7 +6,7 @@ included in the LICENSE file.
 -->
 <script setup lang="ts">
 import type { Ref } from 'vue'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { b64Decode } from '@/api/fetch.pb'
@@ -37,7 +37,7 @@ const context = getContext()
 const loading = ref(true)
 const loaded = ref(false)
 
-const resultsComponent: Ref<HTMLDivElement | undefined> = ref()
+const resultsComponent = useTemplateRef('resultsComponent')
 
 const title = computed(() => {
   return `Bootstrap Manifest Sync for ${route.params.cluster}`

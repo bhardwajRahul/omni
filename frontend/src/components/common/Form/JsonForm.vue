@@ -40,9 +40,11 @@ import TimeControlRenderer from './TimeControlRenderer.vue'
 
 const errors = ref<ErrorObject[]>([])
 
-const emit = defineEmits(['update:model-value'])
+const emit = defineEmits<{
+  'update:model-value': [Record<string, unknown>]
+}>()
 
-const onChange = async (event: { data: unknown; errors: unknown }) => {
+const onChange = async (event: { data: Record<string, unknown>; errors: unknown }) => {
   emit('update:model-value', event.data)
 }
 

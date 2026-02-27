@@ -31,7 +31,9 @@ const props = defineProps<{
   infraProvider?: string
 }>()
 
-const emit = defineEmits(['update:infra-provider', 'update:idle-machine-count'])
+const emit = defineEmits<{
+  'update:infra-provider': [string]
+}>()
 
 const { infraProvider } = toRefs(props)
 
@@ -57,7 +59,7 @@ const setInfraProvider = (item: Resource<InfraProviderStatusSpec>) => {
 
   selectingProvider.value = false
 
-  emit('update:infra-provider', item.metadata.id)
+  emit('update:infra-provider', item.metadata.id!)
 }
 </script>
 

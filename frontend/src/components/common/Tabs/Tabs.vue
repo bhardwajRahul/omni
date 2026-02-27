@@ -23,10 +23,10 @@ interface Props extends TabsRootProps {
 }
 
 const props = defineProps<Props>()
-const emits = defineEmits<TabsRootEmits>()
+const emit = defineEmits<TabsRootEmits>()
 
 const tabsRootProps = reactiveOmit(props, 'tabsListClass')
-const forwarded = useForwardPropsEmits(tabsRootProps, emits)
+const forwarded = useForwardPropsEmits(tabsRootProps, emit)
 
 defineSlots<{
   triggers(): unknown

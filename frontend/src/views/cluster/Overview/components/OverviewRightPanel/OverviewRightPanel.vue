@@ -412,7 +412,7 @@ const downloadSupportBundleModalOpen = ref(false)
         <Tooltip
           class="grow"
           :disabled="!locked"
-          :description="`Cluster scaling is disabled when the cluster is locked.`"
+          description="Cluster scaling is disabled when the cluster is locked."
         >
           <TButton
             is="router-link"
@@ -432,7 +432,7 @@ const downloadSupportBundleModalOpen = ref(false)
         <Tooltip
           class="grow"
           :disabled="!locked"
-          :description="`Kubernetes updates are disabled when the cluster is locked.`"
+          description="Kubernetes updates are disabled when the cluster is locked."
         >
           <TButton
             variant="primary"
@@ -448,7 +448,7 @@ const downloadSupportBundleModalOpen = ref(false)
         <Tooltip
           class="grow"
           :disabled="!locked"
-          :description="`Talos updates are disabled when the cluster is locked.`"
+          description="Talos updates are disabled when the cluster is locked."
         >
           <TButton
             variant="primary"
@@ -486,7 +486,7 @@ const downloadSupportBundleModalOpen = ref(false)
         <Tooltip
           class="grow"
           :disabled="!locked"
-          :description="`Cluster deletion is disabled when the cluster is locked.`"
+          description="Cluster deletion is disabled when the cluster is locked."
         >
           <TButton
             class="text-red-r1"

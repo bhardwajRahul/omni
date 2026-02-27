@@ -6,7 +6,7 @@ included in the LICENSE file.
 -->
 <script setup lang="ts">
 import { vOnClickOutside } from '@vueuse/components'
-import { ref, toRefs, watch } from 'vue'
+import { ref, toRefs, useTemplateRef, watch } from 'vue'
 
 import { Runtime } from '@/api/common/omni.pb'
 import type { Resource } from '@/api/grpc'
@@ -37,11 +37,14 @@ const props = defineProps<{
 
 const showCompletions = ref(false)
 
-const emit = defineEmits(['update:filter-value', 'update:filter-labels'])
+const emit = defineEmits<{
+  'update:filter-value': [string | undefined]
+  'update:filter-labels': [Label[]]
+}>()
 
 const { filterValue, filterLabels } = toRefs(props)
 
-const input = ref<{ getCaretPosition: () => number | void }>()
+const input = useTemplateRef('input')
 const selectedSuggestion = ref(0)
 const selectedLabel = ref<number>()
 

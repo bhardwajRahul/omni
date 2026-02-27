@@ -44,12 +44,12 @@ const defaultTunnelMode = (() => {
   }
 })()
 
-const emit = defineEmits([
-  'update:kernel-arguments',
-  'update:initial-labels',
-  'update:provider-config',
-  'update:grpc-tunnel',
-])
+const emit = defineEmits<{
+  'update:kernel-arguments': [string | undefined]
+  'update:initial-labels': [Record<string, LabelSelectItem> | undefined]
+  'update:provider-config': [Record<string, unknown>]
+  'update:grpc-tunnel': [GrpcTunnelMode]
+}>()
 
 const { infraProvider, initialLabels, kernelArguments, providerConfig } = toRefs(props)
 

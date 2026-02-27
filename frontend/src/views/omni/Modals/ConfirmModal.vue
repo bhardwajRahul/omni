@@ -36,10 +36,10 @@ const props = withDefaults(
   },
 )
 
-const emits = defineEmits<AlertDialogEmits & { confirm: [] }>()
+const emit = defineEmits<AlertDialogEmits & { confirm: [] }>()
 
 const alertDialogRootProps = reactiveOmit(props, 'title', 'actionLabel', 'loading')
-const forwarded = useForwardPropsEmits(alertDialogRootProps, emits)
+const forwarded = useForwardPropsEmits(alertDialogRootProps, emit)
 </script>
 
 <template>

@@ -27,7 +27,9 @@ import ConfigPatchEdit from '@/views/omni/Modals/ConfigPatchEdit.vue'
 
 import MachineSetConfigEdit from '../../Modals/MachineSetConfigEdit.vue'
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits<{
+  'update:modelValue': [MachineSet]
+}>()
 
 enum AllocationMode {
   Manual = 'Manual',
