@@ -48,11 +48,3 @@ const config = computed(() => configResource.value?.spec.data ?? '')
     class="py-4"
   />
 </template>
-
-<style>
-@reference "../../../index.css";
-
-.monaco-editor-vue3 h4 {
-  @apply font-bold;
-}
-</style>

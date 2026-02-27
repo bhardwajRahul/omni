@@ -10,10 +10,8 @@ included in the LICENSE file.
   </TransitionGroup>
 </template>
 
+<!-- eslint-disable-next-line vue/enforce-style-attribute -->
 <style>
-.v-item {
-  opacity: 1;
-}
 .v-enter-active,
 .v-leave-active {
   transition: all 0.3s linear;

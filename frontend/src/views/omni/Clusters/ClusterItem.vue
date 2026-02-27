@@ -204,7 +204,7 @@ const clusterDestroyDialogOpen = ref(false)
   </CollapsibleRoot>
 </template>
 
-<style>
+<style scoped>
 .collapsible-content[data-state='closed'] {
   animation: slideUp 200ms ease-out;
 }

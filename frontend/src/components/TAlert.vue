@@ -31,14 +31,40 @@ const icons: Record<AlertType, IconType> = {
 </script>
 
 <template>
-  <div class="alert" :class="'alert-' + type">
-    <div class="alert-box">
-      <div id="icon" class="alert-icon-wrapper">
-        <TIcon :icon="icons[type]" />
+  <div
+    class="rounded-md border border-l-4 border-naturals-n6 bg-naturals-n0 p-4"
+    :class="{
+      'border-l-red-r2': type === 'error',
+      'border-l-blue-400': type === 'info',
+      'border-l-green-g1': type === 'success',
+      'border-l-yellow-y1': type === 'warn',
+    }"
+  >
+    <div class="flex items-center">
+      <div
+        class="flex items-center justify-center"
+        :class="{
+          'text-red-400': type === 'error',
+          'text-blue-400': type === 'info',
+          'text-green-g1': type === 'success',
+          'text-yellow-y1': type === 'warn',
+        }"
+      >
+        <TIcon :icon="icons[type]" class="size-5" />
       </div>
-      <div class="alert-info-wrapper">
-        <h3 id="title">{{ title }}</h3>
-        <div v-if="$slots.default" id="description">
+      <div class="ml-3 flex flex-col gap-2">
+        <h3
+          class="text-sm font-medium"
+          :class="{
+            'text-red-400': type === 'error',
+            'text-blue-400': type === 'info',
+            'text-green-g1': type === 'success',
+            'text-yellow-y1': type === 'warn',
+          }"
+        >
+          {{ title }}
+        </h3>
+        <div v-if="$slots.default" class="text-sm font-normal">
           <p>
             <slot></slot>
           </p>
@@ -52,82 +78,3 @@ const icons: Record<AlertType, IconType> = {
     </div>
   </div>
 </template>
-
-<style>
-@reference "../index.css";
-
-.alert {
-  @apply rounded-md border border-l-4 border-naturals-n6 bg-naturals-n0 p-4;
-}
-
-.alert-box {
-  @apply flex items-center;
-}
-.alert-icon-wrapper {
-  @apply flex items-center justify-center;
-}
-
-.alert-info-wrapper {
-  @apply ml-3 flex flex-col gap-2;
-}
-
-#title {
-  @apply text-sm font-medium;
-}
-
-#description {
-  @apply text-sm font-normal;
-}
-
-#icon > * {
-  @apply h-5 w-5;
-}
-
-.alert-error {
-  @apply border border-l-4 border-naturals-n5 border-l-red-r2;
-}
-
-.alert-error #title {
-  @apply text-red-400;
-}
-
-.alert-error #icon {
-  @apply text-red-400;
-}
-
-.alert-info {
-  @apply border-l-blue-400;
-}
-
-.alert-info #title {
-  @apply text-blue-400;
-}
-
-.alert-info #icon {
-  @apply text-blue-400;
-}
-
-.alert-success {
-  @apply border-l-green-g1;
-}
-
-.alert-success #title {
-  @apply text-green-g1;
-}
-
-.alert-success #icon {
-  @apply text-green-g1;
-}
-
-.alert-warn {
-  @apply border border-l-4 border-naturals-n5 border-l-yellow-y1;
-}
-
-.alert-warn #title {
-  @apply text-yellow-y1;
-}
-
-.alert-warn #icon {
-  @apply text-yellow-y1;
-}
-</style>

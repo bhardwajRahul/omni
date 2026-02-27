@@ -187,10 +187,7 @@ const uiSchema = computed(() => {
 .vertical-layout {
   @apply flex flex-col divide-y divide-naturals-n4;
 }
-</style>
 
-<style>
-@reference "../../../index.css";
 .group {
   @apply m-2 rounded border border-naturals-n6;
 }

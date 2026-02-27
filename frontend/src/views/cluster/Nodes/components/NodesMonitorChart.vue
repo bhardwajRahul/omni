@@ -310,7 +310,7 @@ const loading = w.loading
   </div>
 </template>
 
-<style>
+<style scoped>
 @reference "../../../../index.css";
 
 #chartContainer .apexcharts-tooltip {

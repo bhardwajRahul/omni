@@ -92,7 +92,7 @@ watchEffect(() => {
   </AccordionRoot>
 </template>
 
-<style>
+<style scoped>
 .collapsible-content-child {
   animation: slideDown 200ms ease-out;
 }

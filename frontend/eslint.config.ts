@@ -62,6 +62,7 @@ export default defineConfigWithVueTs(
       ],
       'vue/component-options-name-casing': 'error',
       'vue/dot-notation': 'error',
+      'vue/enforce-style-attribute': 'error',
       'vue/eqeqeq': 'error',
       'vue/match-component-file-name': 'error',
       'vue/match-component-import-name': 'error',

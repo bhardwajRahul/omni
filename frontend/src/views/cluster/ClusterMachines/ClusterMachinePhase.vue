@@ -121,10 +121,7 @@ defineProps<Props>()
         connected(machine) ? undefined : 'The machine is unreachable. The last known state is shown'
       "
     >
-      <div
-        class="flex gap-1"
-        :class="'cluster-stage-box' + (connected(machine) ? '' : ' brightness-50')"
-      >
+      <div class="flex items-center gap-1" :class="!connected(machine) && 'brightness-50'">
         <TIcon :icon="stageIcon(machine)" class="h-4" />
         <div data-testid="cluster-machine-stage-name" class="flex-1 truncate">
           {{ stageName(machine) || '' }}
@@ -133,11 +130,3 @@ defineProps<Props>()
     </Tooltip>
   </div>
 </template>
-
-<style>
-@reference "../../../index.css";
-
-.cluster-stage-box {
-  @apply flex items-center gap-1;
-}
-</style>

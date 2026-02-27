@@ -211,15 +211,3 @@ watch([editor, schemaVersion], () => {
 <template>
   <div id="editor" ref="editor" class="h-full w-full" />
 </template>
-
-<style>
-@reference "../../../index.css";
-
-.editor h4 {
-  @apply font-bold;
-}
-
-.monaco-editor {
-  outline: 0;
-}
-</style>

@@ -90,7 +90,7 @@ defineProps<Props>()
 
 <template>
   <div class="flex gap-2">
-    <div :style="'color: ' + phaseColor(item)" class="cluster-phase-box">
+    <div :style="'color: ' + phaseColor(item)" class="flex items-center gap-1">
       <TIcon :icon="phaseIcon(item)" class="h-4" />
       <div data-testid="machine-set-phase-name">{{ phaseName(item) || '' }}</div>
     </div>
@@ -100,11 +100,3 @@ defineProps<Props>()
     </div>
   </div>
 </template>
-
-<style>
-@reference "../../../index.css";
-
-.cluster-phase-box {
-  @apply flex items-center gap-1;
-}
-</style>
